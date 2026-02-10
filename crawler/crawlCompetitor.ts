@@ -1,0 +1,1100 @@
+import { chromium, type BrowserContext } from "playwright";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import * as cheerio from "cheerio";
+import crypto from "node:crypto";
+import { compareSnapshots } from "@/lib/change-detection/compareSnapshots";
+import { crawlFailure, snapshotFailure } from "@/lib/log/crawl";
+import { persistObservationalInsights } from "@/lib/insights/persistObservationalInsights";
+import { persistWebpageSignalInsights } from "@/lib/insights/persistWebpageSignalInsights";
+import {
+  PAGE_TAXONOMY,
+  type PageType,
+  detectPageTypeFromContent,
+  detectPageTypeFromNav,
+  getPageTypePriority,
+  shouldIgnorePage,
+} from "@/lib/PAGE_TAXONOMY";
+
+export type CrawlPageType = PageType;
+type DbPageType = CrawlPageType;
+
+interface NavItem {
+  text: string;
+  href: string;
+}
+
+interface PageSignals {
+  primaryHeadline?: string | null;
+  primaryCtaText?: string | null;
+  primaryCtaHref?: string | null;
+  secondaryCtaText?: string | null;
+  topNavigation?: NavItem[];
+  footerLinks?: NavItem[];
+}
+
+export interface CrawledPageMetadata {
+  pageType: CrawlPageType;
+  url: string;
+  title: string | null;
+  httpStatus: number | null;
+  html: string;
+  screenshotBuffer: Buffer;
+  screenshotMimeType: "image/png";
+  signals?: PageSignals;
+}
+
+export interface CrawlCompetitorResult {
+  ok: boolean;
+  competitorId: string;
+  competitorUrl: string;
+  crawlJobId: string;
+  startedAt: string;
+  endedAt: string;
+  status: "completed" | "failed";
+  pages: CrawledPageMetadata[];
+  errors: string[];
+}
+
+export interface CrawlCompetitorOptions {
+  competitorId: string;
+  competitorUrl: string;
+  /**
+   * If provided, use this existing crawl job (e.g. from enqueue) and mark it running.
+   * Otherwise a new job is created.
+   */
+  existingCrawlJobId?: string;
+  /**
+   * Supabase Storage bucket to upload screenshots into.
+   * Must already exist (create in Supabase Dashboard).
+   */
+  screenshotBucket?: string;
+  /**
+   * Playwright navigation timeout in ms.
+   */
+  navigationTimeoutMs?: number;
+  /**
+   * Retry attempts per page (in addition to first attempt).
+   */
+  retryCount?: number;
+  /**
+   * Respect robots.txt when possible.
+   */
+  respectRobotsTxt?: boolean;
+  /**
+   * User-agent rotation list.
+   */
+  userAgents?: string[];
+  /**
+   * Whether to run Chromium headless. Default true.
+   */
+  headless?: boolean;
+}
+
+export interface StandaloneCrawlResult {
+  ok: boolean;
+  baseUrl: string;
+  startedAt: string;
+  endedAt: string;
+  pages: CrawledPageMetadata[];
+  errors: string[];
+}
+
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing environment variable: ${name}`);
+  return value;
+}
+
+function normalizeUrl(input: string): string {
+  const trimmed = input.trim();
+  const withScheme = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+    ? trimmed
+    : `https://${trimmed}`;
+  const url = new URL(withScheme);
+  // Normalize: drop hash, keep path (homepage may be "/")
+  url.hash = "";
+  return url.toString();
+}
+
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+const DEFAULT_USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/132.0",
+];
+
+const MAX_PAGES_TO_CRAWL = 8;
+function classifyLink(text: string, href: string): CrawlPageType | null {
+  if (shouldIgnorePage(href, text)) return null;
+  return detectPageTypeFromNav(text, href);
+}
+
+function toDbPageType(pageType: CrawlPageType): DbPageType {
+  return pageType;
+}
+
+function isMissingColumnError(err: unknown, column: string): boolean {
+  const message =
+    err && typeof err === "object" && "message" in err
+      ? String((err as { message: unknown }).message)
+      : String(err);
+  return (
+    message.includes(`Could not find the '${column}' column`) ||
+    message.toLowerCase().includes(`column \"${column}\" does not exist`) ||
+    message.toLowerCase().includes(`column ${column} does not exist`)
+  );
+}
+
+function isInvalidPageTypeEnumError(err: unknown): boolean {
+  const message =
+    err && typeof err === "object" && "message" in err
+      ? String((err as { message: unknown }).message)
+      : String(err);
+  return message.includes("invalid input value for enum page_type");
+}
+
+function schemaUpgradeHint(): string {
+  return "Database schema appears out of date. Apply latest Supabase migrations (page_type enum + snapshots columns) and refresh the API schema cache, then re-run the crawl.";
+}
+
+function extractCandidateLinks(html: string, baseUrl: string): Array<{ href: string; text: string }> {
+  const $ = cheerio.load(html);
+  const candidates: Array<{ href: string; text: string }> = [];
+
+  $("nav a[href], header a[href], a[href]").each((_, el) => {
+    const hrefRaw = ($(el).attr("href") ?? "").trim();
+    const text = ($(el).text() ?? "").trim();
+    if (!hrefRaw) return;
+
+    let href = "";
+    try {
+      href = new URL(hrefRaw, baseUrl).toString();
+    } catch {
+      return;
+    }
+
+    candidates.push({ href, text });
+  });
+
+  return candidates
+    .filter((l) => l.href.startsWith("http"))
+    .filter((l) => sameOrigin(l.href, baseUrl))
+    .filter((l) => !l.href.startsWith("mailto:") && !l.href.startsWith("tel:") && !l.href.startsWith("javascript:"));
+}
+
+function extractTopNavigationLinks(html: string, baseUrl: string): NavItem[] {
+  const $ = cheerio.load(html);
+  const links: NavItem[] = [];
+  $("header nav a[href], nav a[href]").each((_, el) => {
+    const text = ($(el).text() ?? "").trim();
+    const hrefRaw = ($(el).attr("href") ?? "").trim();
+    if (!text || !hrefRaw) return;
+    try {
+      const href = new URL(hrefRaw, baseUrl).toString();
+      if (!sameOrigin(href, baseUrl)) return;
+      if (shouldIgnorePage(href, text)) return;
+      links.push({ text, href });
+    } catch {
+      return;
+    }
+  });
+  const deduped = new Map<string, NavItem>();
+  for (const link of links) {
+    const key = `${link.href}::${link.text.toLowerCase()}`;
+    if (!deduped.has(key)) deduped.set(key, link);
+  }
+  return Array.from(deduped.values()).slice(0, 25);
+}
+
+function extractFooterLinks(html: string, baseUrl: string): NavItem[] {
+  const $ = cheerio.load(html);
+  const links: NavItem[] = [];
+  $("footer a[href]").each((_, el) => {
+    const text = ($(el).text() ?? "").trim();
+    const hrefRaw = ($(el).attr("href") ?? "").trim();
+    if (!text || !hrefRaw) return;
+    try {
+      const href = new URL(hrefRaw, baseUrl).toString();
+      if (!sameOrigin(href, baseUrl)) return;
+      if (shouldIgnorePage(href, text)) return;
+      links.push({ text, href });
+    } catch {
+      return;
+    }
+  });
+  const deduped = new Map<string, NavItem>();
+  for (const link of links) {
+    const key = `${link.href}::${link.text.toLowerCase()}`;
+    if (!deduped.has(key)) deduped.set(key, link);
+  }
+  return Array.from(deduped.values()).slice(0, 25);
+}
+
+function extractPrimaryCta(html: string, baseUrl: string): { text: string | null; href: string | null } {
+  const $ = cheerio.load(html);
+  const ctaCandidates = $("main a[href], header a[href], a[href], button")
+    .toArray()
+    .slice(0, 300)
+    .map((el) => {
+      const text = ($(el).text() ?? "").trim();
+      const hrefRaw = $(el).attr("href")?.trim() ?? null;
+      const lowered = text.toLowerCase();
+      const ctaScore =
+        (/(get started|book demo|request demo|start free|free trial|contact sales|talk to sales|sign up|signup)/i.test(
+          text
+        )
+          ? 10
+          : 0) +
+        (["main", "header"].includes($(el).closest("main,header").first().prop("tagName")?.toLowerCase() ?? "")
+          ? 2
+          : 0) +
+        (lowered.length > 1 && lowered.length < 40 ? 1 : 0);
+      if (ctaScore <= 0) return null;
+      let href: string | null = null;
+      if (hrefRaw) {
+        try {
+          href = new URL(hrefRaw, baseUrl).toString();
+        } catch {
+          href = null;
+        }
+      }
+      return { text, href, score: ctaScore };
+    })
+    .filter((item): item is { text: string; href: string | null; score: number } => Boolean(item))
+    .sort((a, b) => b.score - a.score);
+
+  const top = ctaCandidates[0];
+  if (!top) return { text: null, href: null };
+  return { text: top.text, href: top.href };
+}
+
+function extractPrimaryHeadline(html: string): string | null {
+  const $ = cheerio.load(html);
+  const headline = $("main h1, header h1, h1").first().text().trim();
+  return headline || null;
+}
+
+function extractTopCtas(
+  html: string,
+  baseUrl: string,
+  limit: number
+): Array<{ text: string; href: string | null }> {
+  const $ = cheerio.load(html);
+  const candidates = $("main a[href], header a[href], a[href], button")
+    .toArray()
+    .slice(0, 300)
+    .map((el) => {
+      const text = ($(el).text() ?? "").trim();
+      const hrefRaw = $(el).attr("href")?.trim() ?? null;
+      const lowered = text.toLowerCase();
+      const ctaScore =
+        (/(get started|book demo|request demo|start free|free trial|contact sales|talk to sales|sign up|signup)/i.test(
+          text
+        )
+          ? 10
+          : 0) +
+        (["main", "header"].includes(
+          $(el).closest("main,header").first().prop("tagName")?.toLowerCase() ?? ""
+        )
+          ? 2
+          : 0) +
+        (lowered.length > 1 && lowered.length < 40 ? 1 : 0);
+      if (ctaScore <= 0) return null;
+      let href: string | null = null;
+      if (hrefRaw) {
+        try {
+          href = new URL(hrefRaw, baseUrl).toString();
+        } catch {
+          href = null;
+        }
+      }
+      return { text, href, score: ctaScore };
+    })
+    .filter((item): item is { text: string; href: string | null; score: number } => Boolean(item))
+    .sort((a, b) => b.score - a.score);
+
+  const uniqueByText = new Map<string, { text: string; href: string | null }>();
+  for (const cta of candidates) {
+    const key = cta.text.toLowerCase();
+    if (!uniqueByText.has(key)) uniqueByText.set(key, { text: cta.text, href: cta.href });
+    if (uniqueByText.size >= limit) break;
+  }
+  return Array.from(uniqueByText.values()).slice(0, limit);
+}
+
+function extractH1Text(html: string): string | null {
+  const $ = cheerio.load(html);
+  const h1 = $("main h1, header h1, h1").first().text().trim();
+  return h1 || null;
+}
+
+function extractH2Headings(html: string): string[] {
+  const $ = cheerio.load(html);
+  const withinMain = $("main h2").toArray();
+  const nodes = withinMain.length > 0 ? withinMain : $("h2").toArray();
+  const headings = nodes
+    .map((el) => ($(el).text() ?? "").trim())
+    .filter(Boolean)
+    .filter((t) => t.length <= 140)
+    .slice(0, 50);
+
+  const deduped = new Map<string, string>();
+  for (const h of headings) {
+    const key = h.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, h);
+  }
+  return Array.from(deduped.values()).slice(0, 30);
+}
+
+function extractNavLabels(html: string, baseUrl: string): string[] {
+  const top = extractTopNavigationLinks(html, baseUrl).map((l) => l.text).filter(Boolean);
+  const deduped = new Map<string, string>();
+  for (const label of top) {
+    const key = label.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, label);
+  }
+  return Array.from(deduped.values()).slice(0, 25);
+}
+
+function computeHtmlHash(html: string): string {
+  const normalizedHtml = html
+    .replace(/\s+/g, " ")
+    .replace(/>\s+</g, "><")
+    .trim();
+  return crypto.createHash("sha256").update(normalizedHtml).digest("hex");
+}
+
+function pickTargetUrls(
+  baseUrl: string,
+  links: Array<{ href: string; text: string }>
+): Array<{ pageType: CrawlPageType; url: string }> {
+  const origin = new URL(baseUrl).origin;
+  const selectedByType = new Map<CrawlPageType, string>();
+  const selectedPages: Array<{ pageType: CrawlPageType; url: string }> = [
+    { pageType: PAGE_TAXONOMY.HOMEPAGE, url: origin },
+  ];
+  selectedByType.set(PAGE_TAXONOMY.HOMEPAGE, origin);
+
+  const typedCandidates = links
+    .map((link) => {
+      const pageType = classifyLink(link.text, link.href);
+      if (!pageType) return null;
+      return { pageType, href: link.href };
+    })
+    .filter((item): item is { pageType: CrawlPageType; href: string } => Boolean(item))
+    .filter((item) => item.pageType !== PAGE_TAXONOMY.NAVIGATION)
+    .sort((a, b) => getPageTypePriority(a.pageType) - getPageTypePriority(b.pageType));
+
+  for (const candidate of typedCandidates) {
+    if (selectedByType.has(candidate.pageType)) continue;
+    selectedByType.set(candidate.pageType, candidate.href);
+    selectedPages.push({ pageType: candidate.pageType, url: candidate.href });
+    if (selectedPages.length >= MAX_PAGES_TO_CRAWL) break;
+  }
+
+  return selectedPages;
+}
+
+function buildScreenshotPath(params: {
+  competitorId: string;
+  crawlJobId: string;
+  pageType: CrawlPageType;
+  pageUrl: string;
+}): string {
+  const safeUrl = Buffer.from(params.pageUrl).toString("base64url").slice(0, 64);
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  return `competitors/${params.competitorId}/crawl_jobs/${params.crawlJobId}/${ts}-${params.pageType}-${safeUrl}.png`;
+}
+
+function createSupabaseAdminClient(): SupabaseClient {
+  const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
+  // Prefer service role key; fall back to anon key (works when RLS is disabled)
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return createClient(supabaseUrl, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+async function upsertPageId(supabase: SupabaseClient, competitorId: string, url: string, pageType: CrawlPageType): Promise<string> {
+  const { data: existing, error: selectError } = await supabase
+    .from("pages")
+    .select("id")
+    .eq("competitor_id", competitorId)
+    .eq("url", url)
+    .limit(1)
+    .single();
+
+  if (selectError && selectError.code !== "PGRST116") {
+    throw new Error(`Failed to lookup page: ${selectError.message}`);
+  }
+  if (existing?.id) return existing.id as string;
+
+  const dbPageType = toDbPageType(pageType);
+  const { data: inserted, error: insertError } = await supabase
+    .from("pages")
+    .insert({
+      competitor_id: competitorId,
+      url,
+      page_type: dbPageType,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !inserted?.id) {
+    if (insertError && isInvalidPageTypeEnumError(insertError)) {
+      throw new Error(`Failed to create page: ${insertError.message}. ${schemaUpgradeHint()}`);
+    }
+    throw new Error(`Failed to create page: ${insertError?.message ?? "unknown error"}`);
+  }
+
+  return inserted.id as string;
+}
+
+async function createCrawlJobId(supabase: SupabaseClient, competitorId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("crawl_jobs")
+    .insert({
+      competitor_id: competitorId,
+      status: "running",
+      started_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error || !data?.id) {
+    throw new Error(`Failed to create crawl job: ${error?.message ?? "unknown error"}`);
+  }
+  return data.id as string;
+}
+
+async function finalizeCrawlJob(supabase: SupabaseClient, crawlJobId: string, status: "completed" | "failed", errorMessage?: string) {
+  const update: Record<string, unknown> = {
+    status,
+    completed_at: new Date().toISOString(),
+  };
+  if (errorMessage) update.error_message = errorMessage;
+  const { error } = await supabase.from("crawl_jobs").update(update).eq("id", crawlJobId);
+  if (error) {
+    // Best-effort; don't throw and mask the original error.
+    // eslint-disable-next-line no-console
+    console.warn("Failed to finalize crawl job:", error.message);
+  }
+}
+
+async function uploadScreenshot(
+  supabase: SupabaseClient,
+  bucket: string,
+  screenshotPath: string,
+  screenshotBuffer: Buffer
+): Promise<{ screenshotPath: string; screenshotUrl: string | null }> {
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(screenshotPath, screenshotBuffer, {
+      contentType: "image/png",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new Error(`Failed to upload screenshot: ${uploadError.message}`);
+  }
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(screenshotPath);
+  return { screenshotPath, screenshotUrl: data?.publicUrl ?? null };
+}
+
+async function getNextSnapshotVersion(supabase: SupabaseClient, pageId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("snapshots")
+    .select("version_number")
+    .eq("page_id", pageId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to determine snapshot version: ${error.message}`);
+  }
+
+  const current = Number((data as { version_number?: number } | null)?.version_number ?? 0);
+  return current + 1;
+}
+
+async function persistSnapshot(params: {
+  supabase: SupabaseClient;
+  competitorId: string;
+  crawlJobId: string;
+  pageId: string;
+  pageType: CrawlPageType;
+  url: string;
+  html: string;
+  screenshotPath: string;
+  screenshotUrl: string | null;
+  httpStatus: number | null;
+  title: string | null;
+  versionNumber: number;
+  primaryHeadline: string | null;
+  h1Text: string | null;
+  h2Headings: string[];
+  primaryCtaText: string | null;
+  secondaryCtaText: string | null;
+  navItems: string[];
+  navLabels: string[];
+  htmlHash: string;
+  capturedAt: string;
+}) {
+  const dbPageType = toDbPageType(params.pageType);
+  const fullPayload: Record<string, unknown> = {
+    competitor_id: params.competitorId,
+    page_id: params.pageId,
+    crawl_job_id: params.crawlJobId,
+    url: params.url,
+    page_type: dbPageType,
+    html: params.html,
+    screenshot_path: params.screenshotPath,
+    screenshot_url: params.screenshotUrl,
+    http_status: params.httpStatus,
+    title: params.title,
+    page_title: params.title,
+    version_number: params.versionNumber,
+    primary_headline: params.primaryHeadline,
+    h1_text: params.h1Text,
+    h2_headings: params.h2Headings,
+    primary_cta_text: params.primaryCtaText,
+    secondary_cta_text: params.secondaryCtaText,
+    nav_items: params.navItems,
+    nav_labels: params.navLabels,
+    html_hash: params.htmlHash,
+    captured_at: params.capturedAt,
+  };
+
+  let { data, error } = await params.supabase
+    .from("snapshots")
+    .insert(fullPayload)
+    .select("id")
+    .single();
+
+  if (error) {
+    // Backward-compatible retry for older DB schemas (missing new structured columns).
+    if (
+      isMissingColumnError(error, "captured_at") ||
+      isMissingColumnError(error, "primary_headline") ||
+      isMissingColumnError(error, "primary_cta_text") ||
+      isMissingColumnError(error, "nav_items") ||
+      isMissingColumnError(error, "html_hash") ||
+      isMissingColumnError(error, "page_title") ||
+      isMissingColumnError(error, "h1_text") ||
+      isMissingColumnError(error, "h2_headings") ||
+      isMissingColumnError(error, "secondary_cta_text") ||
+      isMissingColumnError(error, "nav_labels")
+    ) {
+      const minimalPayload: Record<string, unknown> = {
+        competitor_id: params.competitorId,
+        page_id: params.pageId,
+        crawl_job_id: params.crawlJobId,
+        url: params.url,
+        page_type: dbPageType,
+        html: params.html,
+        screenshot_path: params.screenshotPath,
+        screenshot_url: params.screenshotUrl,
+        http_status: params.httpStatus,
+        title: params.title,
+        version_number: params.versionNumber,
+      };
+
+      const retry = await params.supabase
+        .from("snapshots")
+        .insert(minimalPayload)
+        .select("id")
+        .single();
+
+      data = retry.data;
+      error = retry.error;
+      if (error) {
+        throw new Error(`Failed to persist snapshot: ${error.message}. ${schemaUpgradeHint()}`);
+      }
+    } else if (isInvalidPageTypeEnumError(error)) {
+      throw new Error(`Failed to persist snapshot: ${error.message}. ${schemaUpgradeHint()}`);
+    } else {
+      throw new Error(`Failed to persist snapshot: ${error.message}`);
+    }
+  }
+
+  if (!data?.id) throw new Error("Failed to persist snapshot: missing snapshot id");
+  return String(data.id);
+}
+
+function parseRobotsTxt(content: string) {
+  const lines = content.split(/\r?\n/).map((line) => line.trim());
+  const groups: Array<{ userAgents: string[]; allows: string[]; disallows: string[] }> = [];
+  let current: { userAgents: string[]; allows: string[]; disallows: string[] } | null = null;
+
+  for (const raw of lines) {
+    const line = raw.replace(/#.*/, "").trim();
+    if (!line) continue;
+    const [directiveRaw, ...rest] = line.split(":");
+    if (!directiveRaw || rest.length === 0) continue;
+    const directive = directiveRaw.toLowerCase();
+    const value = rest.join(":").trim();
+
+    if (directive === "user-agent") {
+      if (!current || current.allows.length || current.disallows.length) {
+        current = { userAgents: [], allows: [], disallows: [] };
+        groups.push(current);
+      }
+      current.userAgents.push(value.toLowerCase());
+      continue;
+    }
+
+    if (!current) continue;
+    if (directive === "allow") current.allows.push(value);
+    if (directive === "disallow") current.disallows.push(value);
+  }
+
+  return groups;
+}
+
+function isRobotsAllowed(pathname: string, rules: { allows: string[]; disallows: string[] }) {
+  const allowRules = rules.allows.filter(Boolean);
+  const disallowRules = rules.disallows.filter(Boolean);
+  const matchedAllow = allowRules.reduce((max, rule) => (pathname.startsWith(rule) && rule.length > max ? rule.length : max), -1);
+  const matchedDisallow = disallowRules.reduce(
+    (max, rule) => (pathname.startsWith(rule) && rule.length > max ? rule.length : max),
+    -1
+  );
+  if (matchedAllow === -1 && matchedDisallow === -1) return true;
+  return matchedAllow >= matchedDisallow;
+}
+
+async function fetchRobotsRules(origin: string, userAgent: string, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1500, timeoutMs));
+  try {
+    const response = await fetch(`${origin}/robots.txt`, {
+      signal: controller.signal,
+      headers: { "user-agent": userAgent },
+    });
+    if (!response.ok) return null;
+    const text = await response.text();
+    const groups = parseRobotsTxt(text);
+    const token = userAgent.toLowerCase();
+    const exact = groups.find((g) => g.userAgents.some((ua) => ua !== "*" && token.includes(ua)));
+    const wildcard = groups.find((g) => g.userAgents.includes("*"));
+    return exact ?? wildcard ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function capturePageWithRetries(params: {
+  contextFactory: (userAgent: string) => Promise<BrowserContext>;
+  url: string;
+  pageType: CrawlPageType;
+  navigationTimeoutMs: number;
+  retryCount: number;
+  userAgents: string[];
+}): Promise<CrawledPageMetadata> {
+  let lastError: string = "Unknown crawl error";
+
+  for (let attempt = 0; attempt <= params.retryCount; attempt += 1) {
+    const userAgent = params.userAgents[attempt % params.userAgents.length];
+    const context = await params.contextFactory(userAgent);
+    try {
+      const page = await context.newPage();
+      page.setDefaultTimeout(params.navigationTimeoutMs);
+      page.setDefaultNavigationTimeout(params.navigationTimeoutMs);
+      const response = await page.goto(params.url, {
+        waitUntil: "domcontentloaded",
+        timeout: params.navigationTimeoutMs,
+      });
+      await page.waitForLoadState("networkidle", { timeout: Math.min(params.navigationTimeoutMs, 15_000) }).catch(() => undefined);
+      const html = await page.content();
+      const title = await page.title().catch(() => null);
+      const screenshot = await page.screenshot({ fullPage: true, type: "png", timeout: params.navigationTimeoutMs });
+      const inferredPageType = detectPageTypeFromContent(html, params.url);
+      const primaryHeadline = inferredPageType === PAGE_TAXONOMY.HOMEPAGE ? extractPrimaryHeadline(html) : null;
+      const navSignals = params.pageType === PAGE_TAXONOMY.HOMEPAGE
+        ? {
+            primaryHeadline,
+            topNavigation: extractTopNavigationLinks(html, params.url),
+            footerLinks: extractFooterLinks(html, params.url),
+            ...(() => {
+              const top = extractTopCtas(html, params.url, 2);
+              return {
+                primaryCtaText: top[0]?.text ?? null,
+                primaryCtaHref: top[0]?.href ?? null,
+                secondaryCtaText: top[1]?.text ?? null,
+              };
+            })(),
+          }
+        : {};
+      const signals: PageSignals = { ...navSignals };
+      return {
+        pageType: inferredPageType === PAGE_TAXONOMY.HOMEPAGE ? params.pageType : inferredPageType,
+        url: params.url,
+        title,
+        httpStatus: response?.status() ?? null,
+        html,
+        screenshotBuffer: Buffer.from(screenshot),
+        screenshotMimeType: "image/png",
+        signals,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      if (attempt === params.retryCount) {
+        throw new Error(`Failed to crawl ${params.pageType} (${params.url}) after ${attempt + 1} attempt(s): ${lastError}`);
+      }
+    } finally {
+      await context.close().catch(() => undefined);
+    }
+  }
+
+  throw new Error(lastError);
+}
+
+async function withBrowser<T>(headless: boolean, fn: (contextFactory: (userAgent: string) => Promise<BrowserContext>) => Promise<T>): Promise<T> {
+  const browser = await chromium.launch({ headless });
+  try {
+    const contextFactory = async (userAgent: string) =>
+      browser.newContext({
+        userAgent,
+        viewport: { width: 1440, height: 1024 },
+      });
+    return await fn(contextFactory);
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Standalone crawler with no database/storage dependency.
+ * Returns structured crawl results and never throws.
+ */
+export async function crawlWebsiteStandalone(options: Omit<CrawlCompetitorOptions, "competitorId" | "screenshotBucket">): Promise<StandaloneCrawlResult> {
+  const baseUrl = normalizeUrl(options.competitorUrl);
+  const startedAt = new Date().toISOString();
+  const navigationTimeoutMs = options.navigationTimeoutMs ?? 45_000;
+  const retryCount = options.retryCount ?? 2;
+  const respectRobotsTxt = options.respectRobotsTxt ?? true;
+  const userAgents = options.userAgents?.length ? options.userAgents : DEFAULT_USER_AGENTS;
+  const headless = options.headless ?? true;
+  const errors: string[] = [];
+  const pages: CrawledPageMetadata[] = [];
+
+  await withBrowser(headless, async (contextFactory) => {
+    const origin = new URL(baseUrl).origin;
+
+    const homepage = await capturePageWithRetries({
+      contextFactory,
+      url: origin,
+      pageType: "homepage",
+      navigationTimeoutMs,
+      retryCount,
+      userAgents,
+    }).catch((error) => {
+      errors.push(error instanceof Error ? error.message : String(error));
+      return null;
+    });
+
+    if (!homepage) return;
+    pages.push(homepage);
+
+    const links = extractCandidateLinks(homepage.html, origin);
+    const targets = pickTargetUrls(origin, links).filter((t) => t.pageType !== "homepage");
+
+    for (const target of targets) {
+      const targetUrl = normalizeUrl(target.url);
+      if (pages.some((p) => p.url === targetUrl)) continue;
+
+      if (respectRobotsTxt) {
+        const ua = userAgents[pages.length % userAgents.length];
+        const rules = await fetchRobotsRules(origin, ua, navigationTimeoutMs);
+        if (rules && !isRobotsAllowed(new URL(targetUrl).pathname, rules)) {
+          errors.push(`Skipping ${targetUrl}: blocked by robots.txt`);
+          continue;
+        }
+      }
+
+      const crawled = await capturePageWithRetries({
+        contextFactory,
+        url: targetUrl,
+        pageType: target.pageType,
+        navigationTimeoutMs,
+        retryCount,
+        userAgents,
+      }).catch((error) => {
+        errors.push(error instanceof Error ? error.message : String(error));
+        return null;
+      });
+
+      if (crawled) pages.push(crawled);
+    }
+  }).catch((error) => {
+    errors.push(error instanceof Error ? error.message : String(error));
+  });
+
+  const endedAt = new Date().toISOString();
+  return {
+    ok: pages.length > 0,
+    baseUrl,
+    startedAt,
+    endedAt,
+    pages,
+    errors,
+  };
+}
+
+/**
+ * Crawl + persist snapshots/changes/crawl_jobs in Supabase.
+ * This function is failure-safe: it returns a failed result instead of throwing.
+ */
+export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<CrawlCompetitorResult> {
+  const competitorUrl = normalizeUrl(options.competitorUrl);
+  const competitorId = options.competitorId;
+  const screenshotBucket = options.screenshotBucket ?? "screenshots";
+  const startedAt = new Date().toISOString();
+  const errors: string[] = [];
+
+  const supabase = createSupabaseAdminClient();
+  let crawlJobId = "";
+
+  try {
+    if (options.existingCrawlJobId) {
+      crawlJobId = options.existingCrawlJobId;
+      await supabase
+        .from("crawl_jobs")
+        .update({
+          status: "running",
+          started_at: new Date().toISOString(),
+        })
+        .eq("id", crawlJobId);
+    } else {
+      crawlJobId = await createCrawlJobId(supabase, competitorId);
+    }
+    const standalone = await crawlWebsiteStandalone({
+      competitorUrl,
+      navigationTimeoutMs: options.navigationTimeoutMs,
+      retryCount: options.retryCount,
+      respectRobotsTxt: options.respectRobotsTxt,
+      userAgents: options.userAgents,
+      headless: options.headless,
+    });
+
+    errors.push(...standalone.errors);
+    const persistedPages: CrawledPageMetadata[] = [];
+
+    for (const page of standalone.pages) {
+      try {
+        const pageId = await upsertPageId(supabase, competitorId, page.url, page.pageType);
+        const screenshotPath = buildScreenshotPath({
+          competitorId,
+          crawlJobId,
+          pageType: page.pageType,
+          pageUrl: page.url,
+        });
+        const { screenshotUrl } = await uploadScreenshot(
+          supabase,
+          screenshotBucket,
+          screenshotPath,
+          page.screenshotBuffer
+        );
+        const versionNumber = await getNextSnapshotVersion(supabase, pageId);
+        const h1Text = extractH1Text(page.html);
+        const h2Headings = extractH2Headings(page.html);
+        const navLabels = extractNavLabels(page.html, page.url);
+        const topCtas =
+          page.pageType === PAGE_TAXONOMY.HOMEPAGE ? extractTopCtas(page.html, page.url, 2) : [];
+        const primaryCtaText = page.signals?.primaryCtaText ?? topCtas[0]?.text ?? null;
+        const secondaryCtaText = page.signals?.secondaryCtaText ?? topCtas[1]?.text ?? null;
+        const snapshotId = await persistSnapshot({
+          supabase,
+          competitorId,
+          crawlJobId,
+          pageId,
+          pageType: page.pageType,
+          url: page.url,
+          html: page.html,
+          screenshotPath,
+          screenshotUrl,
+          httpStatus: page.httpStatus,
+          title: page.title,
+          versionNumber,
+          primaryHeadline:
+            page.pageType === PAGE_TAXONOMY.HOMEPAGE
+              ? page.signals?.primaryHeadline ?? extractPrimaryHeadline(page.html)
+              : null,
+          h1Text,
+          h2Headings,
+          primaryCtaText,
+          secondaryCtaText,
+          navItems: navLabels,
+          navLabels,
+          htmlHash: computeHtmlHash(page.html),
+          capturedAt: new Date().toISOString(),
+        });
+
+        // Previous snapshot query with backward-compatible fallback for older schemas.
+        let previousSnapshot: any = null;
+        const prevFull = await supabase
+          .from("snapshots")
+          .select("id, html, primary_headline, primary_cta_text, nav_items")
+          .eq("page_id", pageId)
+          .lt("version_number", versionNumber)
+          .order("version_number", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (
+          prevFull.error &&
+          (isMissingColumnError(prevFull.error, "primary_headline") ||
+            isMissingColumnError(prevFull.error, "primary_cta_text") ||
+            isMissingColumnError(prevFull.error, "nav_items"))
+        ) {
+          const prevMinimal = await supabase
+            .from("snapshots")
+            .select("id, html")
+            .eq("page_id", pageId)
+            .lt("version_number", versionNumber)
+            .order("version_number", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          previousSnapshot = prevMinimal.data ?? null;
+        } else {
+          previousSnapshot = prevFull.data ?? null;
+        }
+
+        if (previousSnapshot?.id && previousSnapshot?.html) {
+          await compareSnapshots({
+            competitorId,
+            pageId,
+            pageUrl: page.url,
+            pageType: page.pageType,
+            beforeSnapshotId: String(previousSnapshot.id),
+            beforeHtml: String(previousSnapshot.html),
+            afterSnapshotId: snapshotId,
+            afterHtml: page.html,
+            beforeSignals: {
+              primaryHeadline: previousSnapshot.primary_headline ?? null,
+              primaryCtaText: previousSnapshot.primary_cta_text ?? null,
+              navItems: Array.isArray(previousSnapshot.nav_items)
+                ? previousSnapshot.nav_items
+                    .map((item: unknown) => (typeof item === "string" ? item : ""))
+                    .filter(Boolean)
+                : [],
+            },
+            afterSignals: {
+              primaryHeadline:
+                page.pageType === PAGE_TAXONOMY.HOMEPAGE
+                  ? page.signals?.primaryHeadline ?? extractPrimaryHeadline(page.html)
+                  : null,
+              primaryCtaText: page.signals?.primaryCtaText ?? null,
+              navItems: (page.signals?.topNavigation ?? []).map((item) => item.text).filter(Boolean),
+            },
+            persist: true,
+          }).catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            errors.push(`Change detection failed for ${page.url}: ${msg}`);
+          });
+        }
+
+        persistedPages.push(page);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        errors.push(msg);
+        snapshotFailure({
+          competitorId,
+          jobId: crawlJobId,
+          pageUrl: page.url,
+          pageType: page.pageType,
+          message: "Snapshot or change save failed for page",
+          cause: msg,
+        });
+      }
+    }
+
+    const ok = persistedPages.length > 0;
+    if (errors.length > 0) {
+      crawlFailure({
+        competitorId,
+        jobId: crawlJobId,
+        url: competitorUrl,
+        message: ok ? "Crawl completed with some failures" : "Crawl failed",
+        errors,
+      });
+    }
+    if (ok) {
+      await persistObservationalInsights({
+        competitorId,
+        pageTypes: persistedPages.map((page) => page.pageType),
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`Observational insight save failed: ${msg}`);
+      });
+
+      await persistWebpageSignalInsights({ competitorId }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`Webpage signal insight save failed: ${msg}`);
+      });
+
+      await supabase
+        .from("competitors")
+        .update({ last_crawled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("id", competitorId);
+    }
+
+    await finalizeCrawlJob(supabase, crawlJobId, ok ? "completed" : "failed", ok ? undefined : errors[0] ?? "No pages crawled");
+    const endedAt = new Date().toISOString();
+
+    return {
+      ok,
+      competitorId,
+      competitorUrl,
+      crawlJobId,
+      startedAt,
+      endedAt,
+      status: ok ? "completed" : "failed",
+      pages: persistedPages,
+      errors,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown crawl error";
+    errors.push(message);
+    crawlFailure({
+      competitorId,
+      jobId: crawlJobId || undefined,
+      url: competitorUrl,
+      message: "Crawl failed",
+      errors,
+    });
+    if (crawlJobId) {
+      await finalizeCrawlJob(supabase, crawlJobId, "failed", message);
+    }
+    const endedAt = new Date().toISOString();
+    return {
+      ok: false,
+      competitorId,
+      competitorUrl,
+      crawlJobId,
+      startedAt,
+      endedAt,
+      status: "failed",
+      pages: [],
+      errors,
+    };
+  }
+}
+
