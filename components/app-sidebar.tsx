@@ -43,10 +43,11 @@ export function AppSidebar() {
   const pathname = usePathname();
 
   return (
-    <div className="flex h-full w-64 flex-col border-r bg-card text-card-foreground">
-      <div className="flex h-14 items-center border-b px-4">
-        <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
-          <span className="">Competitor Tracker</span>
+    <div className="glass-panel flex h-full w-64 flex-col border-r border-border/60 text-card-foreground">
+      <div className="flex h-14 items-center border-b border-border/60 px-4">
+        <Link href="/dashboard" className="flex items-center gap-2 font-semibold tracking-tight">
+          <span className="text-sm uppercase text-muted-foreground/80">Workspace</span>
+          <span className="text-base text-foreground">Competitor Tracker</span>
         </Link>
       </div>
       <div className="flex-1 overflow-auto py-4">
@@ -59,8 +60,10 @@ export function AppSidebar() {
                 key={link.href}
                 variant={isActive ? "secondary" : "ghost"}
                 className={cn(
-                  "justify-start gap-2",
-                  isActive && "font-medium"
+                  "justify-start gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
+                  "hover:bg-white/5 hover:text-foreground",
+                  isActive &&
+                    "font-medium bg-white/5 text-foreground border border-border/70"
                 )}
                 asChild
               >

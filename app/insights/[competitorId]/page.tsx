@@ -9,16 +9,22 @@ import { PAGE_TAXONOMY, type PageType } from "@/lib/PAGE_TAXONOMY";
 import {
   deriveCompetitiveState,
   deriveFocusSignals,
-  derivePmInterpretation,
-  deriveStrategicWatchlist,
+  deriveKeySignals,
+  deriveServiceInsights,
+  deriveStrategicConsiderations,
+  deriveStrategicImplications,
+  deriveWhatToWatchNext,
   type ChangeLike,
   type InsightLike,
+  type ServiceSnapshot,
 } from "@/lib/insights/competitiveStateLogic";
 import { CompetitiveStateSection } from "@/components/insights/competitive-state-section";
 import { FocusSignalsSection } from "@/components/insights/focus-signals-section";
+import { KeySignalsSection } from "@/components/insights/key-signals-section";
+import { ServiceIntelligenceSection } from "@/components/insights/service-intelligence-section";
 import { WebpageDerivedSignalsSection } from "@/components/insights/webpage-derived-signals-section";
-import { StrategicWatchlistSection } from "@/components/insights/strategic-watchlist-section";
-import { PmInterpretationSection } from "@/components/insights/pm-interpretation-section";
+import { StrategicImplicationsSection } from "@/components/insights/strategic-implications-section";
+import { WhatToWatchSection } from "@/components/insights/what-to-watch-section";
 
 type PageRow = {
   page_type: PageType;
@@ -44,6 +50,13 @@ type ChangeRow = {
   category?: string | null;
   before_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
   after_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
+};
+
+type ServiceSnapshotRow = {
+  page_type: PageType;
+  h2_headings: string[] | null;
+  structured_content: ServiceSnapshot | null;
+  captured_at: string | null;
 };
 
 function formatDate(iso: string | null): string {
@@ -94,7 +107,7 @@ export default async function InsightDetailPage({
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
 
-  const [pagesResult, insightsResult, recentChangesResult, changesLast30DaysResult] = await Promise.all([
+  const [pagesResult, insightsResult, recentChangesResult, changesLast30DaysResult, serviceSnapshotResult] = await Promise.all([
     supabase.from("pages").select("page_type").eq("competitor_id", competitorId),
     supabase
       .from("insights")
@@ -125,12 +138,23 @@ export default async function InsightDetailPage({
       .select("created_at, page_type, category")
       .eq("competitor_id", competitorId)
       .gte("created_at", thirtyDaysAgoIso),
+    supabase
+      .from("snapshots")
+      .select("page_type, h2_headings, structured_content, captured_at")
+      .eq("competitor_id", competitorId)
+      .in("page_type", [PAGE_TAXONOMY.SERVICES, PAGE_TAXONOMY.PRODUCT_OR_SERVICES])
+      .order("captured_at", { ascending: false })
+      .limit(5),
   ]);
 
   const pages = (pagesResult.data ?? []) as PageRow[];
   const insights = (insightsResult.data ?? []) as InsightRow[];
   const recentChanges = (recentChangesResult.data ?? []) as ChangeRow[];
   const changesLast30d = (changesLast30DaysResult.data ?? []) as ChangeLike[];
+  const serviceSnapshots = (serviceSnapshotResult.data ?? []) as ServiceSnapshotRow[];
+  const latestServicesSnapshot =
+    serviceSnapshots.find((row) => row.page_type === PAGE_TAXONOMY.SERVICES) ?? serviceSnapshots[0] ?? null;
+  const serviceSnapshot = (latestServicesSnapshot?.structured_content ?? null) as ServiceSnapshot | null;
 
   const pageTypes = pages
     .map((page) => page.page_type)
@@ -204,12 +228,27 @@ export default async function InsightDetailPage({
         )
       ? ["Capability focus is derived from repeated product and services section headings."]
       : ["Capability focus signals will populate as product/services pages are detected."];
-  const watchlistItems = deriveStrategicWatchlist({ trackedPageTypes: uniquePageTypes });
-  const pmInterpretation = derivePmInterpretation({
+
+  const keySignals = deriveKeySignals({
     status: competitiveState.status,
-    trackedPageTypes: uniquePageTypes,
     insightsLast30d: insightsLast30d as InsightLike[],
   });
+  const strategicImplications = deriveStrategicImplications({
+    keySignals,
+    insightsLast30d: insightsLast30d as InsightLike[],
+  });
+  const watchNextItems = deriveWhatToWatchNext({
+    status: competitiveState.status,
+    keySignals,
+  });
+  const serviceInsights = deriveServiceInsights(serviceSnapshot);
+  const serviceConsiderations = deriveStrategicConsiderations(serviceSnapshot);
+  const serviceOverview = {
+    totalServices: serviceSnapshot?.section_count ?? 0,
+    primaryFocus: serviceSnapshot?.primary_focus ?? "Not enough signal yet",
+    industries: serviceSnapshot?.industries ?? [],
+  };
+  const serviceEvidenceHeadings = latestServicesSnapshot?.h2_headings ?? [];
 
   return (
     <div className="space-y-6">
@@ -240,6 +279,8 @@ export default async function InsightDetailPage({
         interpretation={focusSignals.interpretation}
       />
 
+      <KeySignalsSection signals={keySignals} />
+
       <WebpageDerivedSignalsSection
         messaging={messagingSignals}
         gtm={gtmSignals}
@@ -247,12 +288,21 @@ export default async function InsightDetailPage({
         capabilityFocus={capabilityFocus}
       />
 
-      <StrategicWatchlistSection items={watchlistItems} />
+      <ServiceIntelligenceSection
+        overview={serviceOverview}
+        derivedSignals={serviceInsights}
+        strategicConsiderations={serviceConsiderations}
+        evidenceHeadings={serviceEvidenceHeadings}
+      />
+
+      <StrategicImplicationsSection implications={strategicImplications} />
+
+      <WhatToWatchSection items={watchNextItems} />
 
       <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Recent Website Changes (Evidence)</h2>
+        <h2 className="text-base font-medium text-muted-foreground">Evidence (Recent Changes)</h2>
         {recentChanges.length === 0 ? (
-          <Card>
+          <Card className="border-dashed">
             <CardContent className="pt-6 text-sm text-muted-foreground">
               No changes detected in the last crawl. This suggests short-term strategic stability.
             </CardContent>
@@ -264,9 +314,9 @@ export default async function InsightDetailPage({
               const afterUrl = pickScreenshotUrl(change.after_snapshot);
               return (
                 <li key={change.id}>
-                  <Card>
+                  <Card className="border-dashed">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-base">{change.summary}</CardTitle>
+                      <CardTitle className="text-sm font-medium">{change.summary}</CardTitle>
                       <p className="text-sm text-muted-foreground">
                         Detected: {formatDate(change.created_at)}
                       </p>
@@ -315,8 +365,6 @@ export default async function InsightDetailPage({
           </ul>
         )}
       </div>
-
-      <PmInterpretationSection bullets={pmInterpretation} />
     </div>
   );
 }

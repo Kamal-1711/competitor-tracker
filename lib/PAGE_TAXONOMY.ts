@@ -1,6 +1,7 @@
 export const PAGE_TAXONOMY = {
   HOMEPAGE: "homepage",
   PRICING: "pricing",
+  SERVICES: "services",
   PRODUCT_OR_SERVICES: "product_or_services",
   USE_CASES_OR_INDUSTRIES: "use_cases_or_industries",
   CASE_STUDIES_OR_CUSTOMERS: "case_studies_or_customers",
@@ -44,17 +45,26 @@ const PAGE_TYPE_DEFINITIONS: PageTypeMap = {
     competitiveSignal: "Price/packaging updates signal market pressure or repositioning.",
     priority: 2,
   },
+  services: {
+    key: "services",
+    label: "Services / Solutions",
+    urlPatterns: [/\/services?\b/i, /\/solutions?\b/i, /\/what-we-do\b/i, /\/offerings?\b/i, /\/who-we-serve\b/i, /\/who-we-work-with\b/i],
+    navTextKeywords: ["services", "solutions", "what we do", "offerings", "who we serve", "who we work with"],
+    // Keep content signals focused to avoid misclassifying "platform" pages.
+    contentSignals: ["our solutions", "service offering", "how we deliver", "who we serve", "clients we serve"],
+    pmValue: "Service pages reveal capability packaging and delivery emphasis.",
+    competitiveSignal: "Service shifts indicate consulting angle, depth, and execution model changes.",
+    priority: 3,
+  },
   product_or_services: {
     key: "product_or_services",
     label: "Product or Services",
     urlPatterns: [
-      /\/product(s)?\b/i,
-      /\/service(s)?\b/i,
-      /\/solution(s)?\b/i,
-      /\/platform\b/i,
-      /\/capabilities?\b/i,
+      /product(s)?\b/i,
+      /platform\b/i,
+      /capabilities?\b/i,
     ],
-    navTextKeywords: ["product", "products", "service", "services", "solutions", "platform"],
+    navTextKeywords: ["product", "products", "platform", "capabilities"],
     contentSignals: ["features", "capabilities", "what we offer", "our services"],
     pmValue: "These pages define the offering shape and strategic focus.",
     competitiveSignal: "Offering changes indicate shifts in product/service positioning.",
@@ -113,11 +123,42 @@ const IGNORE_URL_PATTERNS: RegExp[] = [
   /\/legal\b/i,
   /\/privacy\b/i,
   /\/terms\b/i,
+  /\/news\b/i,
+  /\/blog\b/i,
   /\/help\b/i,
   /\/support\b/i,
   /\/docs?\b/i,
   /\/documentation\b/i,
 ];
+
+/**
+ * Mandatory URLs to crawl per competitor domain.
+ * These patterns are always attempted (best-effort) even if not discovered via navigation.
+ * Key: domain pattern, Value: list of path patterns to attempt.
+ */
+export const MANDATORY_CRAWL_PATHS: Record<string, string[]> = {
+  // Crunchbase-like sites: try standard product/service discovery pages
+  "crunchbase\\.com": [
+    "/buy/select-product", // Known Crunchbase product page
+    "/products",
+    "/offerings",
+    "/solutions",
+    "/services",
+    "/platform",
+    "/features",
+  ],
+  // Generic SaaS patterns
+  ".*": [
+    "/pricing",
+    "/products",
+    "/product",
+    "/platform",
+    "/services",
+    "/solutions",
+    "/features",
+    "/capabilities",
+  ],
+};
 
 const IGNORE_NAV_TEXT: string[] = [
   "careers",
@@ -145,6 +186,7 @@ function includesAnyKeyword(input: string, keywords: string[]): boolean {
 
 const DETECTION_ORDER: PageType[] = [
   PAGE_TAXONOMY.PRICING,
+  PAGE_TAXONOMY.SERVICES,
   PAGE_TAXONOMY.PRODUCT_OR_SERVICES,
   PAGE_TAXONOMY.USE_CASES_OR_INDUSTRIES,
   PAGE_TAXONOMY.CASE_STUDIES_OR_CUSTOMERS,

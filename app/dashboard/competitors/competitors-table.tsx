@@ -248,6 +248,7 @@ export function CompetitorsTable({
                         <Button
                           variant="outline"
                           size="sm"
+                          className="h-8 px-2 text-xs font-normal rounded-md border-border/60 bg-transparent hover:bg-white/5"
                           onClick={() => onEdit(c)}
                           disabled={isPending}
                         >
@@ -256,6 +257,7 @@ export function CompetitorsTable({
                         <Button
                           variant="outline"
                           size="sm"
+                          className="h-8 px-3 text-xs font-medium rounded-md border-border/70 bg-transparent text-foreground/90 hover:bg-white/5"
                           onClick={() => onCrawlNow(c.id)}
                           disabled={
                             isPending ||
@@ -265,12 +267,18 @@ export function CompetitorsTable({
                         >
                           {crawlingCompetitorId === c.id ? "Running…" : "Check for competitor updates"}
                         </Button>
-                        <Button variant="ghost" size="sm" asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs font-normal text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md"
+                          asChild
+                        >
                           <Link href={`/insights/${c.id}`}>View insights →</Link>
                         </Button>
                         <Button
-                          variant="destructive"
+                          variant="ghost"
                           size="sm"
+                          className="h-8 px-2 text-xs font-normal text-red-400 hover:bg-red-500/10"
                           onClick={() => onDelete(c.id)}
                           disabled={isPending}
                         >

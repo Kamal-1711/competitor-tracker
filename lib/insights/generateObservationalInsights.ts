@@ -18,6 +18,8 @@ function pageTypeToObservation(pageType: PageType): string {
       return "Homepage under continuous tracking.";
     case "pricing":
       return "Pricing page detected; no changes observed.";
+    case "services":
+      return "Services and solutions pages detected and monitored.";
     case "product_or_services":
       return "Services page actively monitored.";
     case "use_cases_or_industries":

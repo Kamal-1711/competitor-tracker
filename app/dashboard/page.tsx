@@ -115,20 +115,22 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Overview of your competitor tracking workspace.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
+        <Card className="glass-subtle border border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Most Active Competitor</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold">{mostActiveCompetitorName}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-lg font-semibold text-foreground">
+              {mostActiveCompetitorName}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
               {mostActiveCount > 0
                 ? `${mostActiveCount} strategic updates in last 7 days`
                 : "No strategic updates in last 7 days"}
@@ -136,36 +138,40 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-subtle border border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Primary Focus Area</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold">{topFocusArea}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-lg font-semibold text-foreground">
+              {topFocusArea}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
               {topFocusAreaCount > 0 ? `${topFocusAreaCount} strategic updates this week` : "No concentrated movement detected"}
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-subtle border border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Market Movement</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-semibold">{marketMovement}</div>
-            <p className="text-xs text-muted-foreground">
+            <div className="text-lg font-semibold text-foreground">
+              {marketMovement}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
               {insights7d.length} strategic updates across {activeCompetitors7d} competitors
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-subtle border border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Recent Strategic Update</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-sm font-semibold">
+            <div className="text-sm font-semibold text-foreground">
               {latestInsight?.insight_text ?? "No strategic updates detected yet."}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -179,46 +185,55 @@ export default async function DashboardPage() {
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Recent Strategic Updates</h2>
-            <Button asChild variant="outline" size="sm">
+            <h2 className="text-lg font-semibold text-foreground">Recent Strategic Updates</h2>
+            <Button asChild variant="outline" size="sm" className="border-border/60 bg-transparent hover:bg-white/5">
                 <Link href="/dashboard/changes">View Full Competitive Intelligence</Link>
             </Button>
         </div>
 
         {recentActivity.length === 0 ? (
-          <Card>
+          <Card className="glass-subtle border border-border/60">
             <CardContent className="py-8 text-center text-muted-foreground">
               No strategic updates detected yet.
             </CardContent>
           </Card>
         ) : (
-          <div className="rounded-md border">
-            <div className="grid grid-cols-12 gap-4 border-b bg-muted/50 p-4 text-sm font-medium text-muted-foreground">
+          <div className="glass-subtle rounded-xl border border-border/60">
+            <div className="grid grid-cols-12 gap-4 border-b border-border/60 bg-white/5 p-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 <div className="col-span-3">Competitor</div>
                 <div className="col-span-3">Focus area</div>
                 <div className="col-span-4">Strategic update</div>
                 <div className="col-span-2 text-right">Time</div>
             </div>
-            <div className="divide-y">
+            <div className="divide-y divide-border/60">
             {recentActivity.map((insight) => {
               const comp = compMap.get(insight.competitor_id);
               const compName = comp?.name ?? comp?.url ?? "Unknown";
               const focusArea = pageTypeToFocusArea(insight.page_type as PageType);
 
               return (
-                <div key={insight.id} className="grid grid-cols-12 gap-4 p-4 text-sm items-center hover:bg-muted/50 transition-colors">
-                  <div className="col-span-3 font-medium truncate" title={compName}>
+                <div
+                  key={insight.id}
+                  className="grid grid-cols-12 items-center gap-4 p-4 text-sm transition-colors hover:bg-white/5"
+                >
+                  <div className="col-span-3 truncate font-medium text-foreground" title={compName}>
                     {compName}
                   </div>
                   <div className="col-span-3">
-                    <Badge variant="secondary" className="font-normal truncate block w-fit max-w-full">
+                    <Badge
+                      variant="secondary"
+                      className="block max-w-full truncate border border-white/10 bg-white/5 font-normal"
+                    >
                         {focusArea}
                     </Badge>
                   </div>
-                  <div className="col-span-4 truncate text-muted-foreground" title={insight.insight_text}>
+                  <div
+                    className="col-span-4 truncate text-sm text-muted-foreground"
+                    title={insight.insight_text}
+                  >
                     {insight.insight_text}
                   </div>
-                  <div className="col-span-2 text-right text-muted-foreground">
+                  <div className="col-span-2 text-right text-xs text-muted-foreground">
                     {timeAgo(insight.created_at)}
                   </div>
                 </div>

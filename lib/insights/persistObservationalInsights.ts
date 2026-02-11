@@ -24,6 +24,8 @@ function toObservationText(pageType: PageType): string {
       return "Homepage is actively monitored.";
     case "pricing":
       return "Pricing page detected and tracked.";
+    case "services":
+      return "Services and solutions pages are actively monitored.";
     case "product_or_services":
       return "Services pages under continuous observation.";
     case "use_cases_or_industries":

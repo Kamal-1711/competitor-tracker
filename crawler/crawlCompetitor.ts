@@ -11,8 +11,10 @@ import {
   type PageType,
   detectPageTypeFromContent,
   detectPageTypeFromNav,
+  detectPageTypeFromUrl,
   getPageTypePriority,
   shouldIgnorePage,
+  MANDATORY_CRAWL_PATHS,
 } from "@/lib/PAGE_TAXONOMY";
 
 export type CrawlPageType = PageType;
@@ -31,6 +33,16 @@ interface PageSignals {
   topNavigation?: NavItem[];
   footerLinks?: NavItem[];
 }
+
+type ServiceSnapshot = {
+  strategic_keywords_count: number;
+  execution_keywords_count: number;
+  lifecycle_keywords_count: number;
+  enterprise_keywords_count: number;
+  industries: string[];
+  primary_focus: "Strategic" | "Execution" | "Balanced";
+  section_count: number;
+};
 
 export interface CrawledPageMetadata {
   pageType: CrawlPageType;
@@ -353,6 +365,116 @@ function extractH2Headings(html: string): string[] {
   return Array.from(deduped.values()).slice(0, 30);
 }
 
+function extractH3Headings(html: string): string[] {
+  const $ = cheerio.load(html);
+  const withinMain = $("main h3").toArray();
+  const nodes = withinMain.length > 0 ? withinMain : $("h3").toArray();
+  const headings = nodes
+    .map((el) => ($(el).text() ?? "").trim())
+    .filter(Boolean)
+    .filter((t) => t.length <= 140)
+    .slice(0, 80);
+
+  const deduped = new Map<string, string>();
+  for (const h of headings) {
+    const key = h.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, h);
+  }
+  return Array.from(deduped.values()).slice(0, 50);
+}
+
+function extractListItems(html: string): string[] {
+  const $ = cheerio.load(html);
+  const items = $("main li, li")
+    .toArray()
+    .map((el) => ($(el).text() ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .filter((t) => t.length >= 3 && t.length <= 180)
+    .slice(0, 250);
+
+  const deduped = new Map<string, string>();
+  for (const item of items) {
+    const key = item.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, item);
+  }
+  return Array.from(deduped.values()).slice(0, 120);
+}
+
+function countKeywords(text: string, keywords: string[]): number {
+  let count = 0;
+  for (const keyword of keywords) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const matches = text.match(new RegExp(`\\b${escaped}\\b`, "gi"));
+    if (matches) count += matches.length;
+  }
+  return count;
+}
+
+function analyzeServiceContent(html: string): ServiceSnapshot {
+  const $ = cheerio.load(html);
+  const normalizedText = $("main").text().replace(/\s+/g, " ").trim().toLowerCase();
+
+  const strategicKeywords = [
+    "strategy",
+    "transformation",
+    "advisory",
+    "roadmap",
+    "innovation",
+    "operating model",
+  ];
+  const executionKeywords = [
+    "implementation",
+    "delivery",
+    "deployment",
+    "build",
+    "integrate",
+    "optimize",
+  ];
+  const lifecycleKeywords = ["discovery", "design", "launch", "support", "operate", "maintenance"];
+  const enterpriseKeywords = ["enterprise", "global", "governance", "compliance", "cxo", "fortune"];
+
+  const strategicCount = countKeywords(normalizedText, strategicKeywords);
+  const executionCount = countKeywords(normalizedText, executionKeywords);
+  const lifecycleCount = countKeywords(normalizedText, lifecycleKeywords);
+  const enterpriseCount = countKeywords(normalizedText, enterpriseKeywords);
+
+  const industries = [
+    "healthcare",
+    "finance",
+    "banking",
+    "insurance",
+    "retail",
+    "manufacturing",
+    "logistics",
+    "telecom",
+    "saas",
+    "public sector",
+    "education",
+    "energy",
+  ].filter((industry) => normalizedText.includes(industry));
+
+  const h2Count = $("main h2, h2").length;
+  const h3Count = $("main h3, h3").length;
+  const sectionCount = Math.min(h2Count + h3Count, 50);
+
+  const primaryFocus: ServiceSnapshot["primary_focus"] =
+    strategicCount > executionCount
+      ? "Strategic"
+      : executionCount > strategicCount
+      ? "Execution"
+      : "Balanced";
+
+  return {
+    strategic_keywords_count: strategicCount,
+    execution_keywords_count: executionCount,
+    lifecycle_keywords_count: lifecycleCount,
+    enterprise_keywords_count: enterpriseCount,
+    industries,
+    primary_focus: primaryFocus,
+    section_count: sectionCount,
+  };
+}
+
 function extractNavLabels(html: string, baseUrl: string): string[] {
   const top = extractTopNavigationLinks(html, baseUrl).map((l) => l.text).filter(Boolean);
   const deduped = new Map<string, string>();
@@ -371,6 +493,48 @@ function computeHtmlHash(html: string): string {
   return crypto.createHash("sha256").update(normalizedHtml).digest("hex");
 }
 
+/**
+ * Generate mandatory URLs to attempt for a given base URL.
+ * Looks for matching domain rules in MANDATORY_CRAWL_PATHS.
+ */
+function generateMandatoryUrls(baseUrl: string): Array<{ url: string; pageType: CrawlPageType | null }> {
+  const { origin } = new URL(baseUrl);
+  const candidates: Array<{ url: string; pageType: CrawlPageType | null }> = [];
+
+  // Find matching domain patterns in MANDATORY_CRAWL_PATHS
+  const domainRules: string[] = [];
+  for (const [domainPattern, paths] of Object.entries(MANDATORY_CRAWL_PATHS)) {
+    try {
+      const regex = new RegExp(domainPattern, "i");
+      if (regex.test(new URL(origin).hostname)) {
+        domainRules.push(...paths);
+      }
+    } catch {
+      // Skip invalid regex patterns
+    }
+  }
+
+  // Attempt each mandatory path
+  for (const path of domainRules) {
+    try {
+      const url = new URL(path.startsWith("/") ? path : `/${path}`, origin).toString();
+      // Detect page type from URL
+      const pageType = detectPageTypeFromUrl(url);
+      candidates.push({ url, pageType });
+    } catch {
+      // Skip invalid URLs
+    }
+  }
+
+  // Deduplicate by URL
+  const seen = new Set<string>();
+  return candidates.filter((c) => {
+    if (seen.has(c.url)) return false;
+    seen.add(c.url);
+    return true;
+  });
+}
+
 function pickTargetUrls(
   baseUrl: string,
   links: Array<{ href: string; text: string }>
@@ -382,6 +546,7 @@ function pickTargetUrls(
   ];
   selectedByType.set(PAGE_TAXONOMY.HOMEPAGE, origin);
 
+  // Collect discovered links (from nav, header, etc.)
   const typedCandidates = links
     .map((link) => {
       const pageType = classifyLink(link.text, link.href);
@@ -392,11 +557,30 @@ function pickTargetUrls(
     .filter((item) => item.pageType !== PAGE_TAXONOMY.NAVIGATION)
     .sort((a, b) => getPageTypePriority(a.pageType) - getPageTypePriority(b.pageType));
 
+  // Add discovered links first
   for (const candidate of typedCandidates) {
     if (selectedByType.has(candidate.pageType)) continue;
     selectedByType.set(candidate.pageType, candidate.href);
     selectedPages.push({ pageType: candidate.pageType, url: candidate.href });
     if (selectedPages.length >= MAX_PAGES_TO_CRAWL) break;
+  }
+
+  // Then fill remaining slots with mandatory URLs if not yet selected
+  if (selectedPages.length < MAX_PAGES_TO_CRAWL) {
+    const mandatoryUrls = generateMandatoryUrls(baseUrl);
+    for (const { url, pageType } of mandatoryUrls) {
+      if (selectedPages.length >= MAX_PAGES_TO_CRAWL) break;
+
+      // Skip if this page type is already selected, or if URL is already crawled
+      if (pageType && selectedByType.has(pageType)) continue;
+      if (selectedPages.some((p) => p.url === url)) continue;
+
+      // Add this mandatory URL if we have a page type
+      if (pageType && pageType !== PAGE_TAXONOMY.NAVIGATION) {
+        selectedByType.set(pageType, url);
+        selectedPages.push({ pageType, url });
+      }
+    }
   }
 
   return selectedPages;
@@ -428,9 +612,10 @@ function createSupabaseAdminClient(): SupabaseClient {
 }
 
 async function upsertPageId(supabase: SupabaseClient, competitorId: string, url: string, pageType: CrawlPageType): Promise<string> {
+  const dbPageType = toDbPageType(pageType);
   const { data: existing, error: selectError } = await supabase
     .from("pages")
-    .select("id")
+    .select("id, page_type")
     .eq("competitor_id", competitorId)
     .eq("url", url)
     .limit(1)
@@ -439,9 +624,17 @@ async function upsertPageId(supabase: SupabaseClient, competitorId: string, url:
   if (selectError && selectError.code !== "PGRST116") {
     throw new Error(`Failed to lookup page: ${selectError.message}`);
   }
-  if (existing?.id) return existing.id as string;
+  if (existing?.id) {
+    // Keep page_type aligned with latest classification (best-effort).
+    if (existing.page_type && String(existing.page_type) !== dbPageType) {
+      await supabase
+        .from("pages")
+        .update({ page_type: dbPageType, updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+    }
+    return existing.id as string;
+  }
 
-  const dbPageType = toDbPageType(pageType);
   const { data: inserted, error: insertError } = await supabase
     .from("pages")
     .insert({
@@ -548,6 +741,9 @@ async function persistSnapshot(params: {
   primaryHeadline: string | null;
   h1Text: string | null;
   h2Headings: string[];
+  h3Headings: string[];
+  listItems: string[];
+  structuredContent: ServiceSnapshot | null;
   primaryCtaText: string | null;
   secondaryCtaText: string | null;
   navItems: string[];
@@ -572,6 +768,9 @@ async function persistSnapshot(params: {
     primary_headline: params.primaryHeadline,
     h1_text: params.h1Text,
     h2_headings: params.h2Headings,
+    h3_headings: params.h3Headings,
+    list_items: params.listItems,
+    structured_content: params.structuredContent,
     primary_cta_text: params.primaryCtaText,
     secondary_cta_text: params.secondaryCtaText,
     nav_items: params.navItems,
@@ -597,6 +796,9 @@ async function persistSnapshot(params: {
       isMissingColumnError(error, "page_title") ||
       isMissingColumnError(error, "h1_text") ||
       isMissingColumnError(error, "h2_headings") ||
+      isMissingColumnError(error, "h3_headings") ||
+      isMissingColumnError(error, "list_items") ||
+      isMissingColumnError(error, "structured_content") ||
       isMissingColumnError(error, "secondary_cta_text") ||
       isMissingColumnError(error, "nav_labels")
     ) {
@@ -915,6 +1117,10 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
         const versionNumber = await getNextSnapshotVersion(supabase, pageId);
         const h1Text = extractH1Text(page.html);
         const h2Headings = extractH2Headings(page.html);
+        const h3Headings = extractH3Headings(page.html);
+        const listItems = extractListItems(page.html);
+        const structuredContent =
+          page.pageType === PAGE_TAXONOMY.SERVICES ? analyzeServiceContent(page.html) : null;
         const navLabels = extractNavLabels(page.html, page.url);
         const topCtas =
           page.pageType === PAGE_TAXONOMY.HOMEPAGE ? extractTopCtas(page.html, page.url, 2) : [];
@@ -939,6 +1145,9 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
               : null,
           h1Text,
           h2Headings,
+          h3Headings,
+          listItems,
+          structuredContent,
           primaryCtaText,
           secondaryCtaText,
           navItems: navLabels,

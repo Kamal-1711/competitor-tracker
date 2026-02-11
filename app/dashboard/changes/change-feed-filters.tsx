@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 const PAGE_TYPES = [
   "homepage",
   "pricing",
+  "services",
   "product_or_services",
   "use_cases_or_industries",
   "case_studies_or_customers",

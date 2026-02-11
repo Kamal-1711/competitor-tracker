@@ -4,58 +4,121 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    /* Light theme – softer, less stark */
+    --background: 210 24% 96%;         /* soft slate-gray background */
+    --foreground: 222 47% 11%;         /* dark slate text */
+    --card: 0 0% 100%;                 /* white cards on soft background */
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 222 84% 56%;
+    --primary-foreground: 222 100% 10%;
+    --secondary: 210 24% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 24% 96%;
+    --muted-foreground: 215 16% 40%;
+    --accent: 210 24% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 10% 3.9%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 222 84% 56%;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
     --radius: 0.5rem;
   }
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    /* Premium dark (default), tuned for comfort */
+    --background: 222 47% 6.5%;
+    --foreground: 210 20% 92%;
+    --card: 222 32% 12%;
+    --card-foreground: 210 20% 92%;
+    --popover: 222 32% 10%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 222 84% 56%;
+    --primary-foreground: 222 100% 10%;
+    --secondary: 240 5% 18%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 240 6% 16%;
+    --muted-foreground: 215 12% 68%;
+    --accent: 260 83% 70%;
+    --accent-foreground: 222 100% 10%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --border: 215 20% 20%;
+    --input: 215 20% 20%;
+    --ring: 222 84% 56%;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   }
 }
 
 body {
   color: hsl(var(--foreground));
-  background: hsl(var(--background));
-  font-family: Arial, Helvetica, sans-serif;
+  /* Gentle light background with subtle tint */
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 55%),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.06), transparent 55%),
+    linear-gradient(145deg, hsl(var(--background)) 0%, hsl(var(--background)) 40%, hsl(var(--background)) 100%);
+  font-family:
+    var(--font-sans),
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.dark body {
+  color: hsl(var(--foreground));
+  /* Layered, textured dark background */
+  background:
+    radial-gradient(circle at top left, rgba(94, 234, 212, 0.05), transparent 55%),
+    radial-gradient(circle at top right, rgba(129, 140, 248, 0.06), transparent 55%),
+    radial-gradient(circle at bottom, rgba(251, 113, 133, 0.04), transparent 60%),
+    linear-gradient(145deg, #020617 0%, #020617 40%, #020617 100%);
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .glass-panel {
+    /* Light mode: soft white glass */
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: 0.75rem;
+    border: 1px solid hsla(var(--border), 0.7);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(18px) saturate(120%);
+  }
+
+  .glass-subtle {
+    /* Light mode: very soft panel */
+    background-color: rgba(255, 255, 255, 0.96);
+    border-radius: 0.7rem;
+    border: 1px solid hsla(var(--border), 0.6);
+    backdrop-filter: blur(14px) saturate(115%);
+  }
+
+  .dark .glass-panel {
+    background-color: hsla(222, 32%, 10%, 0.9);
+    border: 1px solid hsla(var(--border), 0.45);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(18px) saturate(130%);
+  }
+
+  .dark .glass-subtle {
+    background-color: hsla(222, 32%, 9%, 0.85);
+    border: 1px solid hsla(var(--border), 0.4);
+    backdrop-filter: blur(14px) saturate(125%);
+  }
+
+  .border-glow {
+    box-shadow:
+      0 0 0 1px rgba(148, 163, 253, 0.26),
+      0 0 18px rgba(129, 140, 248, 0.25);
   }
 }

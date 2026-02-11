@@ -25,8 +25,11 @@ function getRequiredEnv(name: string): string {
 
 function createSupabaseAdminClient(): SupabaseClient {
   const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const serviceKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(supabaseUrl, serviceKey, {
+  // Prefer service role key; fall back to anon key (works when RLS is disabled)
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  return createClient(supabaseUrl, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
