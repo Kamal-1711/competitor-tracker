@@ -39,9 +39,7 @@ export function CompetitorDetailClient({
         }
         if (result.job.status === "completed") {
           setCrawlingJobId(null);
-          router.push(
-            `/dashboard/competitors/${competitorId}/crawl/${jobId}`
-          );
+          router.push(`/insights/${competitorId}`);
           return;
         }
         if (result.job.status === "failed") {

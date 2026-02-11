@@ -103,9 +103,7 @@ export function CompetitorsTable({
         if (result.job.status === "completed") {
           setCrawlingJobId(null);
           setCrawlingCompetitorId(null);
-          router.push(
-            `/dashboard/competitors/${competitorId}/crawl/${jobId}`
-          );
+          router.push(`/insights/${competitorId}`);
           return;
         }
         if (result.job.status === "failed") {

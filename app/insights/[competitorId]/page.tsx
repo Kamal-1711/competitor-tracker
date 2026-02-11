@@ -12,17 +12,32 @@ import {
   deriveKeySignals,
   deriveServiceInsights,
   deriveStrategicConsiderations,
-  deriveStrategicImplications,
   deriveWhatToWatchNext,
   type ChangeLike,
   type InsightLike,
   type ServiceSnapshot,
 } from "@/lib/insights/competitiveStateLogic";
+import {
+  buildRawSignals,
+  runIntelligenceEngine,
+  type RawSignalsInput,
+  BaselineProfile,
+  StrategicModel,
+  type StrategicRawSignals,
+  type SnapshotSignal,
+  buildCompetitiveSnapshot,
+  SearchIntelligence,
+  type SEOPageData,
+} from "@/lib/intelligence-engine";
 import { CompetitiveStateSection } from "@/components/insights/competitive-state-section";
 import { FocusSignalsSection } from "@/components/insights/focus-signals-section";
 import { KeySignalsSection } from "@/components/insights/key-signals-section";
+import { CompanyBaselineSection } from "@/components/insights/company-baseline-section";
+import { CompetitiveSnapshotSection } from "@/components/insights/competitive-snapshot-section";
+import { SearchPositioningSection } from "@/components/insights/search-positioning-section";
 import { ServiceIntelligenceSection } from "@/components/insights/service-intelligence-section";
 import { WebpageDerivedSignalsSection } from "@/components/insights/webpage-derived-signals-section";
+import { StrengthsRisksSection } from "@/components/insights/strengths-risks-section";
 import { StrategicImplicationsSection } from "@/components/insights/strategic-implications-section";
 import { WhatToWatchSection } from "@/components/insights/what-to-watch-section";
 
@@ -59,6 +74,26 @@ type ServiceSnapshotRow = {
   title: string | null;
   h2_headings: string[] | null;
   structured_content: ServiceSnapshot | null;
+  captured_at: string | null;
+};
+
+type SeoSnapshotRow = {
+  competitor_id: string;
+  url: string;
+  title: string | null;
+  h1_text: string | null;
+  h2_headings: string[] | null;
+  h3_headings: string[] | null;
+  nav_labels: string[] | null;
+  structured_content: {
+    search_seo?: {
+      meta_description?: string;
+      slug?: string;
+      anchors?: string[];
+      image_alt_text?: string[];
+      word_count?: number;
+    };
+  } | null;
   captured_at: string | null;
 };
 
@@ -110,7 +145,8 @@ export default async function InsightDetailPage({
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
 
-  const [pagesResult, insightsResult, recentChangesResult, changesLast30DaysResult, serviceSnapshotResult] = await Promise.all([
+  const [pagesResult, insightsResult, recentChangesResult, changesLast30DaysResult, serviceSnapshotResult, baselineSnapshotsResult, seoSnapshotsResult, peerSeoSnapshotsResult, seoHistoryResult] =
+    await Promise.all([
     supabase.from("pages").select("page_type").eq("competitor_id", competitorId),
     supabase
       .from("insights")
@@ -141,20 +177,64 @@ export default async function InsightDetailPage({
       .select("created_at, page_type, category")
       .eq("competitor_id", competitorId)
       .gte("created_at", thirtyDaysAgoIso),
-    supabase
-      .from("snapshots")
-      .select("page_type, url, http_status, title, h2_headings, structured_content, captured_at")
-      .eq("competitor_id", competitorId)
-      .in("page_type", [PAGE_TAXONOMY.SERVICES, PAGE_TAXONOMY.PRODUCT_OR_SERVICES])
-      .order("captured_at", { ascending: false })
-      .limit(5),
-  ]);
+      supabase
+        .from("snapshots")
+        .select("page_type, url, http_status, title, h2_headings, structured_content, captured_at")
+        .eq("competitor_id", competitorId)
+        .in("page_type", [PAGE_TAXONOMY.SERVICES, PAGE_TAXONOMY.PRODUCT_OR_SERVICES])
+        .order("captured_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("snapshots")
+        .select("page_type, url, http_status, title, h1_text, h2_headings, h3_headings, list_items, nav_labels, structured_content, captured_at")
+        .eq("competitor_id", competitorId)
+        .in("page_type", [
+          PAGE_TAXONOMY.HOMEPAGE,
+          PAGE_TAXONOMY.SERVICES,
+          PAGE_TAXONOMY.CASE_STUDIES_OR_CUSTOMERS,
+          PAGE_TAXONOMY.PRODUCT_OR_SERVICES,
+          PAGE_TAXONOMY.PRICING,
+        ])
+        .order("captured_at", { ascending: false })
+        .limit(40),
+      supabase
+        .from("snapshots")
+        .select("competitor_id, url, title, h1_text, h2_headings, h3_headings, nav_labels, structured_content, captured_at")
+        .eq("competitor_id", competitorId)
+        .order("captured_at", { ascending: false })
+        .limit(200),
+      supabase
+        .from("snapshots")
+        .select("competitor_id, url, title, h1_text, h2_headings, h3_headings, nav_labels, structured_content, captured_at")
+        .neq("competitor_id", competitorId)
+        .order("captured_at", { ascending: false })
+        .limit(400),
+      supabase
+        .from("seo_snapshots")
+        .select("captured_at, seo_dimensions")
+        .eq("competitor_id", competitorId)
+        .order("captured_at", { ascending: false })
+        .limit(3),
+    ]);
 
   const pages = (pagesResult.data ?? []) as PageRow[];
   const insights = (insightsResult.data ?? []) as InsightRow[];
   const recentChanges = (recentChangesResult.data ?? []) as ChangeRow[];
   const changesLast30d = (changesLast30DaysResult.data ?? []) as ChangeLike[];
   const serviceSnapshots = (serviceSnapshotResult.data ?? []) as ServiceSnapshotRow[];
+  const seoSnapshots = (seoSnapshotsResult.data ?? []) as SeoSnapshotRow[];
+  const peerSeoSnapshots = (peerSeoSnapshotsResult.data ?? []) as SeoSnapshotRow[];
+  const seoHistory = (seoHistoryResult.data ?? []) as Array<{
+    captured_at: string;
+    seo_dimensions: {
+      topic_concentration: number;
+      vertical_seo_focus: number;
+      funnel_coverage_balance: number;
+      content_investment_intensity: number;
+      enterprise_seo_orientation: number;
+      seo_momentum: number;
+    };
+  }>;
   const latestServicesSnapshot =
     serviceSnapshots.find((row) => row.page_type === PAGE_TAXONOMY.SERVICES) ?? serviceSnapshots[0] ?? null;
   const serviceSnapshot = (latestServicesSnapshot?.structured_content ?? null) as ServiceSnapshot | null;
@@ -241,10 +321,6 @@ export default async function InsightDetailPage({
     status: competitiveState.status,
     insightsLast30d: insightsLast30d as InsightLike[],
   });
-  const strategicImplications = deriveStrategicImplications({
-    keySignals,
-    insightsLast30d: insightsLast30d as InsightLike[],
-  });
   const watchNextItems = deriveWhatToWatchNext({
     status: competitiveState.status,
     keySignals,
@@ -257,6 +333,191 @@ export default async function InsightDetailPage({
     industries: serviceSnapshot?.industries ?? [],
   };
   const serviceEvidenceHeadings = latestServicesSnapshot?.h2_headings ?? [];
+
+  // Baseline profile wiring
+  const baselineSnapshots = (baselineSnapshotsResult.data ?? []) as Array<
+    {
+      page_type: PageType;
+      url: string;
+      http_status: number | null;
+      title: string | null;
+      h1_text: string | null;
+      h2_headings: string[] | null;
+      h3_headings: string[] | null;
+      list_items: string[] | null;
+      nav_labels: string[] | null;
+      structured_content: unknown;
+      captured_at: string | null;
+    }
+  >;
+
+  function latestSnapshotOf(pageType: PageType): SnapshotSignal | null {
+    const snapshot = baselineSnapshots.find((s) => s.page_type === pageType);
+    return snapshot ?? null;
+  }
+
+  const homepageSnapshot = latestSnapshotOf(PAGE_TAXONOMY.HOMEPAGE);
+  const servicesSnapshot = latestSnapshotOf(PAGE_TAXONOMY.SERVICES);
+  const caseStudiesSnapshot = latestSnapshotOf(PAGE_TAXONOMY.CASE_STUDIES_OR_CUSTOMERS);
+  const pricingSnapshot = latestSnapshotOf(PAGE_TAXONOMY.PRICING);
+
+  const aboutLikePage =
+    baselineSnapshots.find((s) =>
+      /about|company|who-we-are/i.test(s.url ?? "") || /about/i.test(s.title ?? "")
+    ) ?? null;
+
+  const navSnapshot = homepageSnapshot;
+
+  const baselineInput: BaselineProfile.BaselineInput = {
+    competitorId,
+    homepage: homepageSnapshot,
+    aboutLikePage,
+    servicesPage: servicesSnapshot,
+    navSnapshot,
+    caseStudiesPage: caseStudiesSnapshot,
+  };
+  const baselineResult = BaselineProfile.runBaselineProfile(baselineInput);
+  const baselineProfile = baselineResult.profile;
+
+  // Strategic model raw signals
+  const serviceCount =
+    serviceSnapshot?.section_count ??
+    baselineProfile.offering_profile.offering_count ??
+    0;
+  const industriesDetected =
+    serviceSnapshot?.industries ??
+    baselineProfile.offering_profile.industries ??
+    [];
+
+  const enterpriseKeywords =
+    serviceSnapshot?.enterprise_keywords_count ?? 0;
+  const trustIndicators = baselineProfile.trust_profile.trust_indicators;
+
+  const pricingText = [
+    pricingSnapshot?.h1_text,
+    ...(pricingSnapshot?.h2_headings ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const pricingTransparent = /[\d₹$]/.test(pricingText);
+  const multipleTiersDetected =
+    (pricingSnapshot?.h2_headings?.length ?? 0) >= 3;
+  const enterpriseTierDetected = /enterprise/.test(pricingText);
+
+  const structuralTraitShiftsDetected = changesLast30d.some(
+    (c) =>
+      c.category === "Navigation / Structure" ||
+      c.category === "Pricing & Offers"
+  );
+
+  const strategicRaw: StrategicRawSignals = {
+    competitorId,
+    strategicTerms: serviceSnapshot?.strategic_keywords_count ?? 0,
+    executionTerms: serviceSnapshot?.execution_keywords_count ?? 0,
+    lifecycleTerms: serviceSnapshot?.lifecycle_keywords_count ?? 0,
+    serviceCount,
+    industriesDetected,
+    enterpriseKeywords,
+    caseStudiesPresent: trustIndicators.case_studies_present,
+    certificationsCount: trustIndicators.certifications_detected.length,
+    pricingTransparent,
+    multipleTiersDetected,
+    enterpriseTierDetected,
+    recentChangeCount30d: changesLast30d.length,
+    structuralTraitShiftsDetected,
+  };
+
+  const strategicModel = StrategicModel.runStrategicModel({ raw: strategicRaw });
+
+  const snapshot = buildCompetitiveSnapshot({
+    competitorId,
+    dimensions: strategicModel.dimensionsResult.dimensions,
+    comparisonData: {
+      overlappingHighDimensions: [],
+      overallPressureLevel: strategicModel.pressure.overallPressureLevel,
+    },
+    evolutionData: strategicModel.trajectory,
+  });
+
+  // SEO / Search Positioning Intelligence
+  const isSeoPath = (url: string): boolean =>
+    /\/(blog|resources|insights|knowledge|case-studies?|guides)(\/|$)/i.test(url);
+
+  const toSeoPage = (row: SeoSnapshotRow): SEOPageData => {
+    const searchSeo = row.structured_content?.search_seo;
+    const derivedWordCount =
+      [row.h1_text ?? "", ...(row.h2_headings ?? []), ...(row.h3_headings ?? []), ...(searchSeo?.anchors ?? [])]
+        .join(" ")
+        .split(/\s+/)
+        .filter(Boolean).length;
+    return {
+      url: row.url ?? "",
+      h1: row.h1_text ?? "",
+      h2: row.h2_headings ?? [],
+      h3: row.h3_headings ?? [],
+      meta_title: row.title ?? "",
+      meta_description: searchSeo?.meta_description,
+      word_count: searchSeo?.word_count ?? derivedWordCount,
+      published_at: row.captured_at ? new Date(row.captured_at) : undefined,
+      anchor_text: searchSeo?.anchors ?? row.nav_labels ?? [],
+      slug: searchSeo?.slug,
+      image_alt_text: searchSeo?.image_alt_text ?? [],
+    };
+  };
+
+  const seoPages: SEOPageData[] = seoSnapshots
+    .filter((s) => isSeoPath(s.url ?? ""))
+    .map(toSeoPage);
+
+  const targetSeoPages: SEOPageData[] = peerSeoSnapshots
+    .filter((s) => isSeoPath(s.url ?? ""))
+    .map(toSeoPage);
+
+  const seoIntelligence = SearchIntelligence.buildSeoIntelligence({
+    competitorId,
+    pages: seoPages,
+    targetPages: targetSeoPages,
+    previousSnapshots: seoHistory.map((row) => ({
+      captured_at: row.captured_at,
+      dimensions: row.seo_dimensions,
+    })),
+  });
+
+  // Deterministic Competitive Intelligence Engine wiring
+  const rawSignalsInput: RawSignalsInput = {
+    competitorId,
+    trackedPageTypes: uniquePageTypes,
+    changesLast30dCount: changesLast30d.length,
+    latestByPageType:
+      latestServicesSnapshot && latestServicesSnapshot.page_type === PAGE_TAXONOMY.SERVICES
+        ? {
+            [PAGE_TAXONOMY.SERVICES]: {
+              url: latestServicesSnapshot.url,
+              http_status: latestServicesSnapshot.http_status,
+              title: latestServicesSnapshot.title,
+              h2_headings: latestServicesSnapshot.h2_headings,
+              structured_content: latestServicesSnapshot.structured_content,
+            },
+          }
+        : {},
+    webpageSignalInsights: webpageSignals.map((i) => ({
+      page_type: i.page_type,
+      insight_type: "webpage_signal",
+      insight_text: i.insight_text,
+      created_at: i.created_at,
+    })),
+  };
+  const intelligenceRaw = buildRawSignals(rawSignalsInput);
+  const intelligence = runIntelligenceEngine(intelligenceRaw);
+
+  const narrativeStrengths = intelligence.narrative.strengths.map((s) => s.text);
+  const narrativeRisks = intelligence.narrative.risks.map((r) => r.text);
+  const strategicNarrative = intelligence.narrative.strategicImplications.map((i) => ({
+    text: i.text,
+    confidence: intelligence.confidence.level,
+  }));
 
   return (
     <div className="space-y-6">
@@ -272,6 +533,19 @@ export default async function InsightDetailPage({
           {competitor.name || competitor.url}
         </h1>
       </div>
+
+      <CompanyBaselineSection
+        biographySummary={baselineProfile.biography_summary}
+        coreOfferings={baselineProfile.offering_profile.core_offerings}
+        offeringStructureSummary={baselineProfile.offering_structure_summary}
+        targetMarketSummary={baselineProfile.target_market_summary}
+        valuePropositionSummary={baselineProfile.value_proposition_summary}
+        trustProfileSummary={baselineProfile.trust_profile_summary}
+      />
+
+      <CompetitiveSnapshotSection snapshot={snapshot} />
+
+      <SearchPositioningSection seo={seoIntelligence} />
 
       <CompetitiveStateSection
         competitorName={competitor.name || competitor.url}
@@ -315,7 +589,13 @@ export default async function InsightDetailPage({
         evidenceHeadings={serviceEvidenceHeadings}
       />
 
-      <StrategicImplicationsSection implications={strategicImplications} />
+      <StrengthsRisksSection
+        strengths={narrativeStrengths}
+        risks={narrativeRisks}
+        confidence={intelligence.confidence.level}
+      />
+
+      <StrategicImplicationsSection implications={strategicNarrative} />
 
       <WhatToWatchSection items={watchNextItems} />
 

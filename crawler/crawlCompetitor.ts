@@ -6,6 +6,8 @@ import { compareSnapshots } from "@/lib/change-detection/compareSnapshots";
 import { crawlFailure, snapshotFailure } from "@/lib/log/crawl";
 import { persistObservationalInsights } from "@/lib/insights/persistObservationalInsights";
 import { persistWebpageSignalInsights } from "@/lib/insights/persistWebpageSignalInsights";
+import { buildSeoIntelligence } from "@/lib/intelligence-engine/searchIntelligence/seoSnapshotComposer";
+import type { SEOPageData } from "@/lib/intelligence-engine/searchIntelligence/contentCrawler";
 import {
   PAGE_TAXONOMY,
   type PageType,
@@ -44,6 +46,19 @@ type ServiceSnapshot = {
   section_count: number;
 };
 
+export interface CrawledPageSEO {
+  url: string;
+  h1: string;
+  h2: string[];
+  h3: string[];
+  meta_title: string;
+  meta_description: string;
+  anchors: string[];
+  slug: string;
+  image_alt_text: string[];
+  word_count: number;
+}
+
 export interface CrawledPageMetadata {
   pageType: CrawlPageType;
   url: string;
@@ -53,6 +68,7 @@ export interface CrawledPageMetadata {
   screenshotBuffer: Buffer;
   screenshotMimeType: "image/png";
   signals?: PageSignals;
+  seo?: CrawledPageSEO;
 }
 
 export interface CrawlCompetitorResult {
@@ -143,9 +159,22 @@ const DEFAULT_USER_AGENTS = [
 ];
 
 const MAX_PAGES_TO_CRAWL = 8;
+const MAX_SEO_CONTENT_PAGES = 3;
+
+function classifySeoContentPath(url: string): CrawlPageType | null {
+  const lower = url.toLowerCase();
+  if (/\/case-stud(y|ies)(\/|$)/i.test(lower)) {
+    return PAGE_TAXONOMY.CASE_STUDIES_OR_CUSTOMERS;
+  }
+  if (/\/(blog|resources|insights|knowledge|guides)(\/|$)/i.test(lower)) {
+    return PAGE_TAXONOMY.USE_CASES_OR_INDUSTRIES;
+  }
+  return null;
+}
+
 function classifyLink(text: string, href: string): CrawlPageType | null {
   if (shouldIgnorePage(href, text)) return null;
-  return detectPageTypeFromNav(text, href);
+  return detectPageTypeFromNav(text, href) ?? classifySeoContentPath(href);
 }
 
 function toDbPageType(pageType: CrawlPageType): DbPageType {
@@ -400,6 +429,95 @@ function extractListItems(html: string): string[] {
   return Array.from(deduped.values()).slice(0, 120);
 }
 
+function extractMetaDescription(html: string): string {
+  const $ = cheerio.load(html);
+  return (
+    $('meta[name="description"]').attr("content") ??
+    $('meta[property="og:description"]').attr("content") ??
+    ""
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractInternalAnchorText(html: string, pageUrl: string): string[] {
+  const $ = cheerio.load(html);
+  const anchors = $("a[href]")
+    .toArray()
+    .map((el) => {
+      const text = ($(el).text() ?? "").replace(/\s+/g, " ").trim();
+      const hrefRaw = ($(el).attr("href") ?? "").trim();
+      if (!text || !hrefRaw) return null;
+      try {
+        const href = new URL(hrefRaw, pageUrl).toString();
+        if (!sameOrigin(href, pageUrl)) return null;
+        return text;
+      } catch {
+        return null;
+      }
+    })
+    .filter((v): v is string => Boolean(v))
+    .filter((t) => t.length >= 2 && t.length <= 120);
+
+  const deduped = new Map<string, string>();
+  for (const text of anchors) {
+    const key = text.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, text);
+  }
+  return Array.from(deduped.values()).slice(0, 200);
+}
+
+function extractUrlSlug(pageUrl: string): string {
+  try {
+    const pathname = new URL(pageUrl).pathname;
+    const last = pathname.split("/").filter(Boolean).pop() ?? "";
+    return last.replace(/[-_]+/g, " ").trim();
+  } catch {
+    return "";
+  }
+}
+
+function extractImageAltText(html: string): string[] {
+  const $ = cheerio.load(html);
+  const alts = $("img[alt]")
+    .toArray()
+    .map((el) => ($(el).attr("alt") ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .filter((t) => t.length >= 2 && t.length <= 180);
+
+  const deduped = new Map<string, string>();
+  for (const text of alts) {
+    const key = text.toLowerCase();
+    if (!deduped.has(key)) deduped.set(key, text);
+  }
+  return Array.from(deduped.values()).slice(0, 120);
+}
+
+function computeWordCount(html: string): number {
+  const $ = cheerio.load(html);
+  const text = $("main").text() || $("body").text() || "";
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean).length;
+}
+
+function extractCrawledPageSEO(html: string, pageUrl: string, title: string | null): CrawledPageSEO {
+  return {
+    url: pageUrl,
+    h1: extractH1Text(html) ?? "",
+    h2: extractH2Headings(html),
+    h3: extractH3Headings(html),
+    meta_title: title ?? "",
+    meta_description: extractMetaDescription(html),
+    anchors: extractInternalAnchorText(html, pageUrl),
+    slug: extractUrlSlug(pageUrl),
+    image_alt_text: extractImageAltText(html),
+    word_count: computeWordCount(html),
+  };
+}
+
 function countKeywords(text: string, keywords: string[]): number {
   let count = 0;
   for (const keyword of keywords) {
@@ -563,6 +681,25 @@ function pickTargetUrls(
     selectedByType.set(candidate.pageType, candidate.href);
     selectedPages.push({ pageType: candidate.pageType, url: candidate.href });
     if (selectedPages.length >= MAX_PAGES_TO_CRAWL) break;
+  }
+
+  // Add a small number of SEO-content URLs for keyword intelligence without overloading crawl volume.
+  if (selectedPages.length < MAX_PAGES_TO_CRAWL) {
+    const seoCandidates = links
+      .map((link) => {
+        const pageType = classifySeoContentPath(link.href);
+        if (!pageType) return null;
+        return { pageType, url: link.href };
+      })
+      .filter((item): item is { pageType: CrawlPageType; url: string } => Boolean(item));
+
+    let addedSeoPages = 0;
+    for (const candidate of seoCandidates) {
+      if (selectedPages.length >= MAX_PAGES_TO_CRAWL || addedSeoPages >= MAX_SEO_CONTENT_PAGES) break;
+      if (selectedPages.some((p) => p.url === candidate.url)) continue;
+      selectedPages.push(candidate);
+      addedSeoPages += 1;
+    }
   }
 
   // Then fill remaining slots with mandatory URLs if not yet selected
@@ -743,7 +880,7 @@ async function persistSnapshot(params: {
   h2Headings: string[];
   h3Headings: string[];
   listItems: string[];
-  structuredContent: ServiceSnapshot | null;
+  structuredContent: Record<string, unknown> | null;
   primaryCtaText: string | null;
   secondaryCtaText: string | null;
   navItems: string[];
@@ -838,6 +975,34 @@ async function persistSnapshot(params: {
   return String(data.id);
 }
 
+async function persistSeoSnapshot(params: {
+  supabase: SupabaseClient;
+  competitorId: string;
+  pages: SEOPageData[];
+  capturedAt: string;
+}) {
+  const seoIntelligence = buildSeoIntelligence({
+    competitorId: params.competitorId,
+    pages: params.pages,
+    previousSnapshots: [],
+  });
+
+  const { error } = await params.supabase.from("seo_snapshots").insert({
+    competitor_id: params.competitorId,
+    seo_dimensions: seoIntelligence.dimensions,
+    topic_clusters: seoIntelligence.weightedClusters,
+    captured_at: params.capturedAt,
+  });
+
+  if (error) {
+    if (isMissingColumnError(error, "seo_dimensions") || String(error.message).includes("relation \"seo_snapshots\" does not exist")) {
+      // Keep crawl healthy even if migration is not applied yet.
+      return;
+    }
+    throw new Error(`Failed to persist SEO snapshot: ${error.message}`);
+  }
+}
+
 function parseRobotsTxt(content: string) {
   const lines = content.split(/\r?\n/).map((line) => line.trim());
   const groups: Array<{ userAgents: string[]; allows: string[]; disallows: string[] }> = [];
@@ -928,6 +1093,7 @@ async function capturePageWithRetries(params: {
       const title = await page.title().catch(() => null);
       const screenshot = await page.screenshot({ fullPage: true, type: "png", timeout: params.navigationTimeoutMs });
       const inferredPageType = detectPageTypeFromContent(html, params.url);
+      const seo = extractCrawledPageSEO(html, params.url, title);
       const primaryHeadline = inferredPageType === PAGE_TAXONOMY.HOMEPAGE ? extractPrimaryHeadline(html) : null;
       const navSignals = params.pageType === PAGE_TAXONOMY.HOMEPAGE
         ? {
@@ -954,6 +1120,7 @@ async function capturePageWithRetries(params: {
         screenshotBuffer: Buffer.from(screenshot),
         screenshotMimeType: "image/png",
         signals,
+        seo,
       };
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
@@ -1139,12 +1306,17 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
           page.screenshotBuffer
         );
         const versionNumber = await getNextSnapshotVersion(supabase, pageId);
-        const h1Text = extractH1Text(page.html);
-        const h2Headings = extractH2Headings(page.html);
-        const h3Headings = extractH3Headings(page.html);
+        const h1Text = page.seo?.h1 ?? extractH1Text(page.html);
+        const h2Headings = page.seo?.h2 ?? extractH2Headings(page.html);
+        const h3Headings = page.seo?.h3 ?? extractH3Headings(page.html);
         const listItems = extractListItems(page.html);
-        const structuredContent =
+        const serviceSnapshot =
           page.pageType === PAGE_TAXONOMY.SERVICES ? analyzeServiceContent(page.html) : null;
+        const structuredContent: Record<string, unknown> | null = page.seo
+          ? serviceSnapshot
+            ? { ...serviceSnapshot, search_seo: page.seo }
+            : { search_seo: page.seo }
+          : serviceSnapshot;
         const navLabels = extractNavLabels(page.html, page.url);
         const topCtas =
           page.pageType === PAGE_TAXONOMY.HOMEPAGE ? extractTopCtas(page.html, page.url, 2) : [];
@@ -1270,6 +1442,32 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
       });
     }
     if (ok) {
+      const seoPages: SEOPageData[] = persistedPages
+        .filter((page) => /\/(blog|resources|insights|knowledge|case-studies?|guides)(\/|$)/i.test(page.url))
+        .map((page) => ({
+          url: page.url,
+          h1: page.seo?.h1 ?? "",
+          h2: page.seo?.h2 ?? [],
+          h3: page.seo?.h3 ?? [],
+          meta_title: page.seo?.meta_title ?? page.title ?? "",
+          meta_description: page.seo?.meta_description ?? "",
+          word_count: page.seo?.word_count ?? 0,
+          published_at: undefined,
+          anchor_text: page.seo?.anchors ?? [],
+          slug: page.seo?.slug ?? "",
+          image_alt_text: page.seo?.image_alt_text ?? [],
+        }));
+
+      await persistSeoSnapshot({
+        supabase,
+        competitorId,
+        pages: seoPages,
+        capturedAt: new Date().toISOString(),
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`SEO snapshot save failed: ${msg}`);
+      });
+
       await persistObservationalInsights({
         competitorId,
         pageTypes: persistedPages.map((page) => page.pageType),
