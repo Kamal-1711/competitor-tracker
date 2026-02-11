@@ -54,6 +54,9 @@ type ChangeRow = {
 
 type ServiceSnapshotRow = {
   page_type: PageType;
+  url: string;
+  http_status: number | null;
+  title: string | null;
   h2_headings: string[] | null;
   structured_content: ServiceSnapshot | null;
   captured_at: string | null;
@@ -140,7 +143,7 @@ export default async function InsightDetailPage({
       .gte("created_at", thirtyDaysAgoIso),
     supabase
       .from("snapshots")
-      .select("page_type, h2_headings, structured_content, captured_at")
+      .select("page_type, url, http_status, title, h2_headings, structured_content, captured_at")
       .eq("competitor_id", competitorId)
       .in("page_type", [PAGE_TAXONOMY.SERVICES, PAGE_TAXONOMY.PRODUCT_OR_SERVICES])
       .order("captured_at", { ascending: false })
@@ -155,6 +158,11 @@ export default async function InsightDetailPage({
   const latestServicesSnapshot =
     serviceSnapshots.find((row) => row.page_type === PAGE_TAXONOMY.SERVICES) ?? serviceSnapshots[0] ?? null;
   const serviceSnapshot = (latestServicesSnapshot?.structured_content ?? null) as ServiceSnapshot | null;
+  const isServicePageBlocked =
+    latestServicesSnapshot?.page_type === PAGE_TAXONOMY.SERVICES &&
+    (latestServicesSnapshot.http_status === 401 ||
+      latestServicesSnapshot.http_status === 403) &&
+    (latestServicesSnapshot.title ?? "").toLowerCase().includes("just a moment");
 
   const pageTypes = pages
     .map((page) => page.page_type)
@@ -290,8 +298,20 @@ export default async function InsightDetailPage({
 
       <ServiceIntelligenceSection
         overview={serviceOverview}
-        derivedSignals={serviceInsights}
-        strategicConsiderations={serviceConsiderations}
+        derivedSignals={
+          isServicePageBlocked
+            ? [
+                "Service/offerings page is protected by bot mitigation (Cloudflare). We can’t extract structured service data from automated crawls right now.",
+              ]
+            : serviceInsights
+        }
+        strategicConsiderations={
+          isServicePageBlocked
+            ? [
+                `If this competitor is high-priority, run a manual crawl from a real browser session or use an authenticated data source for Crunchbase.`,
+              ]
+            : serviceConsiderations
+        }
         evidenceHeadings={serviceEvidenceHeadings}
       />
 

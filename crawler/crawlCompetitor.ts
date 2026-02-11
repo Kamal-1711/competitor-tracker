@@ -969,13 +969,37 @@ async function capturePageWithRetries(params: {
 }
 
 async function withBrowser<T>(headless: boolean, fn: (contextFactory: (userAgent: string) => Promise<BrowserContext>) => Promise<T>): Promise<T> {
-  const browser = await chromium.launch({ headless });
+  // Best-effort anti-bot hardening (no guarantees; some sites still block automation).
+  const browser = await chromium.launch({
+    headless,
+    args: ["--disable-blink-features=AutomationControlled"],
+  });
   try {
-    const contextFactory = async (userAgent: string) =>
-      browser.newContext({
+    const contextFactory = async (userAgent: string) => {
+      const context = await browser.newContext({
         userAgent,
         viewport: { width: 1440, height: 1024 },
+        locale: "en-US",
+        timezoneId: "America/New_York",
+        extraHTTPHeaders: {
+          "Accept-Language": "en-US,en;q=0.9",
+        },
       });
+
+      // Hide webdriver + common automation fingerprints.
+      await context.addInitScript(() => {
+        // @ts-expect-error - injected in browser runtime
+        Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+        // @ts-expect-error - injected in browser runtime
+        Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
+        // @ts-expect-error - injected in browser runtime
+        Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+        // @ts-expect-error - injected in browser runtime
+        (window as any).chrome = (window as any).chrome ?? { runtime: {} };
+      });
+
+      return context;
+    };
     return await fn(contextFactory);
   } finally {
     await browser.close();
