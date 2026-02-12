@@ -6,6 +6,7 @@ export const PAGE_TAXONOMY = {
   USE_CASES_OR_INDUSTRIES: "use_cases_or_industries",
   CASE_STUDIES_OR_CUSTOMERS: "case_studies_or_customers",
   CTA_ELEMENTS: "cta_elements",
+  BLOG: "blog",
   NAVIGATION: "navigation",
 } as const;
 
@@ -105,6 +106,25 @@ const PAGE_TYPE_DEFINITIONS: PageTypeMap = {
     competitiveSignal: "CTA flow updates indicate acquisition and conversion strategy changes.",
     priority: 4,
   },
+  blog: {
+    key: "blog",
+    label: "Blog / Insights",
+    urlPatterns: [
+      /\/blog(-?posts)?\b/i,
+      /\/news(-?room)?\b/i,
+      /\/insights\b/i,
+      /\/press(-?releases)?\b/i,
+      /\/articles?\b/i,
+      /\/knowledge(-?center)?\b/i,
+      /\/resources\b/i,
+      /\/updates\b/i
+    ],
+    navTextKeywords: ["blog", "news", "insights", "resources", "articles", "knowledge center", "press"],
+    contentSignals: ["latest posts", "read more", "published on", "written by", "recent articles", "share this post"],
+    pmValue: "Blog posts reveal thought leadership, new features, and market point-of-view.",
+    competitiveSignal: "New content frequency and topics signal strategic focus areas.",
+    priority: 2,
+  },
   navigation: {
     key: "navigation",
     label: "Navigation",
@@ -123,8 +143,6 @@ const IGNORE_URL_PATTERNS: RegExp[] = [
   /\/legal\b/i,
   /\/privacy\b/i,
   /\/terms\b/i,
-  /\/news\b/i,
-  /\/blog\b/i,
   /\/help\b/i,
   /\/support\b/i,
   /\/docs?\b/i,
@@ -157,6 +175,9 @@ export const MANDATORY_CRAWL_PATHS: Record<string, string[]> = {
     "/solutions",
     "/features",
     "/capabilities",
+    "/blog",
+    "/news",
+    "/insights",
   ],
 };
 
@@ -186,6 +207,7 @@ function includesAnyKeyword(input: string, keywords: string[]): boolean {
 
 const DETECTION_ORDER: PageType[] = [
   PAGE_TAXONOMY.PRICING,
+  PAGE_TAXONOMY.BLOG,
   PAGE_TAXONOMY.SERVICES,
   PAGE_TAXONOMY.PRODUCT_OR_SERVICES,
   PAGE_TAXONOMY.USE_CASES_OR_INDUSTRIES,

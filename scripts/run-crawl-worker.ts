@@ -9,6 +9,7 @@ import { crawlCompetitor } from "../crawler/crawlCompetitor";
 import fs from "node:fs";
 import path from "node:path";
 import { initializeSocketServer } from "../lib/realtime/socketServer";
+import { processMovementsForJob } from "../lib/strategic-movements/processor";
 
 function loadDotEnvLocal(): void {
   // Lightweight `.env.local` loader for local runs (no dependency).
@@ -65,56 +66,70 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: jobs, error } = await supabase
-    .from("crawl_jobs")
-    .select("id, competitor_id")
-    .eq("status", "pending")
-    .order("created_at", { ascending: true })
-    .limit(1);
-
-  if (error) {
-    console.error("Failed to fetch pending jobs:", error);
-    process.exit(1);
-  }
-
-  if (!jobs?.length) {
-    console.log("No pending crawl jobs.");
-    return;
-  }
-
-  const job = jobs[0];
-  const { data: competitor, error: compError } = await supabase
-    .from("competitors")
-    .select("id, url")
-    .eq("id", job.competitor_id)
-    .single();
-
-  if (compError || !competitor?.url) {
-    console.error("Competitor not found for job", job.id);
-    await supabase
+  while (true) {
+    const { data: jobs, error } = await supabase
       .from("crawl_jobs")
-      .update({
-        status: "failed",
-        completed_at: new Date().toISOString(),
-        error_message: "Competitor not found or missing URL",
-      })
-      .eq("id", job.id);
-    return;
-  }
+      .select("id, competitor_id")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(1);
 
-  console.log(`Processing job ${job.id} for competitor ${competitor.id}`);
+    if (error) {
+      console.error("Failed to fetch pending jobs:", error);
+      break;
+    }
 
-  const result = await crawlCompetitor({
-    competitorId: competitor.id,
-    competitorUrl: competitor.url,
-    existingCrawlJobId: job.id,
-  });
+    if (!jobs?.length) {
+      console.log("No pending crawl jobs.");
+      break;
+    }
 
-  console.log(
-    `Job ${job.id} finished: ${result.status}, pages: ${result.pages.length}, errors: ${result.errors.length}`
-  );
-  if (result.errors.length) {
-    console.error("Crawl errors:", result.errors);
+    const job = jobs[0];
+    const { data: competitor, error: compError } = await supabase
+      .from("competitors")
+      .select("id, url")
+      .eq("id", job.competitor_id)
+      .single();
+
+    if (compError || !competitor?.url) {
+      console.error("Competitor not found for job", job.id);
+      await supabase
+        .from("crawl_jobs")
+        .update({
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          error_message: "Competitor not found or missing URL",
+        })
+        .eq("id", job.id);
+      continue;
+    }
+
+    console.log(`Processing job ${job.id} for competitor ${competitor.id} (${competitor.url})`);
+
+    try {
+      const result = await crawlCompetitor({
+        competitorId: competitor.id,
+        competitorUrl: competitor.url,
+        existingCrawlJobId: job.id,
+      });
+
+      console.log(
+        `Job ${job.id} finished: ${result.status}, pages: ${result.pages.length}, errors: ${result.errors.length}`
+      );
+      if (result.errors.length) {
+        console.error("Crawl errors:", result.errors);
+      }
+    } catch (crawlErr) {
+      console.error(`Crawl execution failed for job ${job.id}:`, crawlErr);
+      await supabase
+        .from("crawl_jobs")
+        .update({
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          error_message: String(crawlErr),
+        })
+        .eq("id", job.id);
+    }
   }
 }
 

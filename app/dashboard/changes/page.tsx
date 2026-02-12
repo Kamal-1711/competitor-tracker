@@ -5,46 +5,9 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { ChangeFeedFilters } from "./change-feed-filters";
 import { CrawlButton } from "./crawl-button";
-import { type StrategicSignalItem } from "./strategic-signal-stream-list";
-import { ChangeFeedRealtime } from "./change-feed-realtime";
-import { WeeklyStrategicSummary, type MovementSignal } from "./weekly-strategic-summary";
-
-export type ChangeCategory =
-  | "Positioning & Messaging"
-  | "Pricing & Offers"
-  | "Product / Services"
-  | "Trust & Credibility"
-  | "Navigation / Structure";
-
-interface ChangeRow {
-  id: string;
-  competitor_id: string;
-  page_type: string;
-  created_at: string;
-  page_url: string;
-  change_type: string;
-  category: ChangeCategory;
-  summary: string;
-  impact_level: "Minor" | "Moderate" | "Strategic" | null;
-  strategic_interpretation: string | null;
-  suggested_monitoring_action: string | null;
-  competitors: { name: string | null; url: string } | { name: string | null; url: string }[] | null;
-  before_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
-  after_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
-}
-
-function pickCompetitor(row: ChangeRow): { name: string | null; url: string } | null {
-  if (!row.competitors) return null;
-  return Array.isArray(row.competitors) ? row.competitors[0] ?? null : row.competitors;
-}
-
-function pickScreenshotUrl(
-  snapshot: ChangeRow["before_snapshot"] | ChangeRow["after_snapshot"]
-): string | null {
-  if (!snapshot) return null;
-  const record = Array.isArray(snapshot) ? snapshot[0] : snapshot;
-  return record?.screenshot_url ?? null;
-}
+import { MovementSummaryBar } from "./movement-summary-bar";
+import { MovementList, type StrategicMovement } from "./movement-list";
+import { ChangeFeedPagination } from "./change-feed-pagination";
 
 export default async function ChangesPage({
   searchParams,
@@ -55,7 +18,7 @@ export default async function ChangesPage({
   if (!workspaceId) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-12">
-        <p className="text-muted-foreground">You must be signed in to view changes.</p>
+        <p className="text-muted-foreground">You must be signed in to view strategic movements.</p>
         <Button asChild>
           <Link href="/login">Sign in</Link>
         </Button>
@@ -66,179 +29,117 @@ export default async function ChangesPage({
   const supabase = await createClient();
 
   const params = await searchParams;
-  const competitorId = typeof params.competitor === "string" ? params.competitor : undefined;
-  const focus = typeof params.focus === "string" ? params.focus : undefined;
-  const fromDate = typeof params.from === "string" ? params.from : undefined;
-  const toDate = typeof params.to === "string" ? params.to : undefined;
-  const pageParam = typeof params.page === "string" ? params.page : "1";
-  const page = Math.max(1, parseInt(pageParam, 10) || 1);
-  const PAGE_SIZE = 20;
-  const offset = (page - 1) * PAGE_SIZE;
+  const page = typeof params.page === "string" ? parseInt(params.page) : 1;
+  const limit = 10;
+  const offset = (page - 1) * limit;
 
-  const { data: competitorsData } = await supabase
-    .from("competitors")
-    .select("id, name, url")
+  // 1. Fetch Strategic Movements (Aggregated Changes)
+  let query = supabase
+    .from("strategic_movements")
+    .select(`
+      *,
+      competitors (
+        name,
+        url
+      )
+    `)
     .eq("workspace_id", workspaceId)
-    .order("name");
-
-  const competitors = competitorsData ?? [];
-  const competitorIds = competitors.map((c) => c.id);
-  if (competitorIds.length === 0) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Competitive Intelligence</h1>
-        <EmptyState
-          title="You’re not tracking any competitors yet."
-          description="Add competitors on the Competitors page and run a check. Strategic updates will appear here."
-        />
-      </div>
-    );
-  }
-
-  let changesQuery = supabase
-    .from("changes")
-    .select(
-      `
-      id,
-      competitor_id,
-      page_type,
-      page_url,
-      change_type,
-      category,
-      summary,
-      impact_level,
-      strategic_interpretation,
-      suggested_monitoring_action,
-      created_at,
-      competitors(name, url),
-      before_snapshot:snapshots!before_snapshot_id(screenshot_url),
-      after_snapshot:snapshots!after_snapshot_id(screenshot_url)
-    `,
-      { count: "exact" }
-    )
-    .in("competitor_id", competitorIds)
     .order("created_at", { ascending: false });
 
-  if (competitorId) changesQuery = changesQuery.eq("competitor_id", competitorId);
-  if (fromDate) changesQuery = changesQuery.gte("created_at", `${fromDate}T00:00:00.000Z`);
-  if (toDate) changesQuery = changesQuery.lte("created_at", `${toDate}T23:59:59.999Z`);
-
-  // Map focus filters to change categories / page types.
-  if (focus === "messaging") {
-    changesQuery = changesQuery.eq("category", "Positioning & Messaging");
-  } else if (focus === "pricing") {
-    changesQuery = changesQuery.eq("category", "Pricing & Offers");
-  } else if (focus === "services") {
-    changesQuery = changesQuery.eq("category", "Product / Services");
-  } else if (focus === "seo") {
-    // Approximate SEO/content by use-case/industry pages.
-    changesQuery = changesQuery.eq("page_type", "use_cases_or_industries");
-  } else if (focus === "structural") {
-    changesQuery = changesQuery.in("category", ["Navigation / Structure", "Trust & Credibility"]);
+  // Apply filters if present
+  if (typeof params.competitor === "string" && params.competitor !== "all") {
+    query = query.eq("competitor_id", params.competitor);
+  }
+  if (typeof params.category === "string" && params.category !== "all") {
+    query = query.eq("movement_category", params.category);
+  }
+  if (typeof params.impact === "string" && params.impact !== "all") {
+    query = query.eq("impact_level", params.impact.toUpperCase());
   }
 
-  const { data: changeRows = [], count: totalCount } = await changesQuery.range(
-    offset,
-    offset + PAGE_SIZE - 1
-  );
-  const changes = (changeRows ?? []) as ChangeRow[];
+  const { data: movementsData, count } = await query
+    .range(offset, offset + limit - 1)
+    .returns<StrategicMovement[]>();
 
-  // Weekly summary over last 7 days for current filters (except pagination).
+  const movements = movementsData ?? [];
+
+  // 2. Fetch Aggregated Statistics for the header (Last 7 days)
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const sevenDaysAgoIso = sevenDaysAgo.toISOString();
 
-  let weeklyQuery = supabase
-    .from("changes")
-    .select("id, category, created_at", { count: "exact" })
-    .in("competitor_id", competitorIds)
-    .gte("created_at", sevenDaysAgoIso);
+  const { data: statsData } = await supabase
+    .from("strategic_movements")
+    .select("impact_level, competitors(name)")
+    .eq("workspace_id", workspaceId)
+    .gte("created_at", sevenDaysAgo.toISOString());
 
-  if (competitorId) weeklyQuery = weeklyQuery.eq("competitor_id", competitorId);
-  if (focus === "messaging") {
-    weeklyQuery = weeklyQuery.eq("category", "Positioning & Messaging");
-  } else if (focus === "pricing") {
-    weeklyQuery = weeklyQuery.eq("category", "Pricing & Offers");
-  } else if (focus === "services") {
-    weeklyQuery = weeklyQuery.eq("category", "Product / Services");
-  } else if (focus === "seo") {
-    weeklyQuery = weeklyQuery.eq("page_type", "use_cases_or_industries");
-  } else if (focus === "structural") {
-    weeklyQuery = weeklyQuery.in("category", ["Navigation / Structure", "Trust & Credibility"]);
-  }
+  const highImpactCount = (statsData as any[] || []).filter(m => m.impact_level === "HIGH").length;
+  const mediumImpactCount = (statsData as any[] || []).filter(m => m.impact_level === "MEDIUM").length;
+  const lowImpactCount = (statsData as any[] || []).filter(m => m.impact_level === "LOW").length;
 
-  const { data: weeklyRows = [], count: weeklyCount } = await weeklyQuery;
-  const weeklyTotal = weeklyCount ?? (weeklyRows?.length ?? 0);
-  const categoryCounts: Record<string, number> = {};
-  for (const row of weeklyRows ?? []) {
-    const key = (row as { category?: string }).category ?? "Unclassified";
-    categoryCounts[key] = (categoryCounts[key] ?? 0) + 1;
-  }
-
-  let movementSignal: MovementSignal = "Stable";
-  if (weeklyTotal >= 10) movementSignal = "Active";
-  else if (weeklyTotal >= 3) movementSignal = "Moderate";
-
-  const signals: StrategicSignalItem[] = changes.map((change) => {
-    const competitor = pickCompetitor(change);
-    const competitorName = competitor?.name ?? competitor?.url ?? "Unknown competitor";
-    const dateLabel = new Date(change.created_at).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-
-    return {
-      id: change.id,
-      createdAt: change.created_at,
-      dateLabel,
-      competitorName,
-      pageUrl: change.page_url,
-      pageType: change.page_type,
-      category: change.category ?? "Navigation / Structure",
-      changeType: change.change_type,
-      summary: change.summary,
-      impactLevel: (change.impact_level as StrategicSignalItem["impactLevel"]) ?? null,
-      strategicInterpretation: change.strategic_interpretation,
-      suggestedMonitoringAction: change.suggested_monitoring_action,
-      beforeScreenshotUrl: pickScreenshotUrl(change.before_snapshot),
-      afterScreenshotUrl: pickScreenshotUrl(change.after_snapshot),
-    };
+  // Calculate most active competitor from stats
+  const compCounts: Record<string, number> = {};
+  (statsData as any[] || []).forEach(s => {
+    const competitor = s.competitors;
+    const compObj = Array.isArray(competitor) ? competitor[0] : competitor;
+    const name = compObj?.name || "Unknown";
+    compCounts[name] = (compCounts[name] || 0) + 1;
   });
+  const mostActive = Object.entries(compCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 
-  const totalPages = totalCount != null ? Math.max(1, Math.ceil(totalCount / PAGE_SIZE)) : 1;
-  const hasNextPage = page < totalPages;
-  const hasPrevPage = page > 1;
+  // 3. Metadata for filters
+  const { data: competitors } = await supabase
+    .from("competitors")
+    .select("id, name, url")
+    .eq("workspace_id", workspaceId);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pb-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Competitive Intelligence</h1>
-        <CrawlButton competitors={competitors} />
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight">Strategic Intelligence Feed</h1>
+          <p className="text-muted-foreground">
+            AI-detected competitive movements and strategic shifts.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <CrawlButton competitors={competitors ?? []} />
+        </div>
       </div>
-      <ChangeFeedFilters
-        competitors={competitors}
-        currentCompetitorId={competitorId}
-        currentFocus={focus}
-        currentFrom={fromDate}
-        currentTo={toDate}
+
+      <MovementSummaryBar
+        total7Days={(statsData as any[] || []).length}
+        highImpact={highImpactCount}
+        mediumImpact={mediumImpactCount}
+        lowImpact={lowImpactCount}
+        mostActiveCompetitor={mostActive}
       />
-      <WeeklyStrategicSummary
-        totalChanges={weeklyTotal}
-        categoryCounts={categoryCounts}
-        movementSignal={movementSignal}
-      />
-      <ChangeFeedRealtime
-        workspaceId={workspaceId}
-        initialItems={signals}
-        page={page}
-        totalPages={totalPages}
-        totalCount={totalCount ?? 0}
-        pageSize={PAGE_SIZE}
-        hasPrevPage={hasPrevPage}
-        hasNextPage={hasNextPage}
-        hasActiveFilters={!!(competitorId || focus || fromDate || toDate)}
-      />
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Live Analysis</h2>
+          <ChangeFeedFilters competitors={competitors ?? []} />
+        </div>
+
+        {movements.length === 0 ? (
+          <EmptyState
+            title="No movements detected"
+            description="Our AI has not detected any significant strategic shifts in the selected period."
+          />
+        ) : (
+          <div className="space-y-6">
+            <MovementList movements={movements} />
+            <ChangeFeedPagination
+              page={page}
+              totalPages={Math.ceil((count || 0) / limit)}
+              totalCount={count || 0}
+              pageSize={limit}
+              hasPrevPage={page > 1}
+              hasNextPage={page < Math.ceil((count || 0) / limit)}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

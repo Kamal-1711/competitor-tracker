@@ -82,3 +82,26 @@ export async function emitHighImpactChange(params: {
     console.error("Socket emit failed", error);
   }
 }
+
+export async function emitBlogNewPost(params: {
+  competitorId: string;
+  postTitle: string;
+  url: string;
+}) {
+  try {
+    const io = getSocketServer();
+    if (!io) return;
+
+    const workspaceId = await getWorkspaceIdForCompetitor(params.competitorId);
+    if (!workspaceId) return;
+
+    io.to(workspaceId).emit("blog_new_post", {
+      competitorId: params.competitorId,
+      postTitle: params.postTitle,
+      url: params.url,
+      timestamp: new Date(),
+    });
+  } catch (error) {
+    console.error("Socket emit failed", error);
+  }
+}

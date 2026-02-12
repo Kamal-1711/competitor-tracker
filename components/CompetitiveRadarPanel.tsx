@@ -177,8 +177,8 @@ export function CompetitiveRadarPanel() {
                         {alert.severity === "high"
                           ? "High"
                           : alert.severity === "moderate"
-                          ? "Moderate"
-                          : "Low"}{" "}
+                            ? "Moderate"
+                            : "Low"}{" "}
                         impact
                       </Badge>
                       <Badge variant="outline" className="border px-2 py-0.5 text-[10px]">
@@ -198,18 +198,18 @@ export function CompetitiveRadarPanel() {
                     </div>
                     <div className="mt-2 flex gap-2">
                       <Button
-                        size="xs"
+                        size="sm"
                         variant="secondary"
-                        className="h-7 flex-1 text-[11px]"
+                        className="h-7 flex-1 text-[11px] px-2"
                         type="button"
                         onClick={handleViewSection}
                       >
                         View Section
                       </Button>
                       <Button
-                        size="xs"
+                        size="sm"
                         variant="outline"
-                        className="h-7 flex-1 text-[11px]"
+                        className="h-7 flex-1 text-[11px] px-2"
                         type="button"
                         onClick={handleMarkAsRead}
                       >

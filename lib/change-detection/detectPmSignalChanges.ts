@@ -39,7 +39,9 @@ function normalizeText(value: string | null | undefined): string {
 }
 
 function normalizeArray(values: string[]): string[] {
-  return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))].sort();
+  return Array.from(new Set(values.map((value) => normalizeText(value)).filter((v) => v.length > 0))).sort(
+    (a, b) => a.localeCompare(b)
+  );
 }
 
 function stripFooterAndNoise(html: string): string {
@@ -51,7 +53,7 @@ function stripFooterAndNoise(html: string): string {
 function extractPriceSignals(text: string): string[] {
   const lowered = text.toLowerCase();
   const matches = lowered.match(/(\$|usd\s*)\s?\d+[.,]?\d*/g) ?? [];
-  return matches.map((m) => m.replace(/\s+/g, "")).sort();
+  return matches.map((m) => m.replace(/\s+/g, "")).sort((a, b) => a.localeCompare(b));
 }
 
 function extractPlanSignals(html: string): string[] {
@@ -65,7 +67,7 @@ function extractPlanSignals(html: string): string[] {
       labels.add(normalized);
     }
   });
-  return [...labels].sort();
+  return Array.from(labels).sort((a, b) => a.localeCompare(b));
 }
 
 function extractProductSectionSignals(html: string): string[] {
@@ -78,7 +80,7 @@ function extractProductSectionSignals(html: string): string[] {
       sections.add(normalized);
     }
   });
-  return [...sections].sort();
+  return Array.from(sections).sort((a, b) => a.localeCompare(b));
 }
 
 function containsCaseStudyOrLogoAdditions(beforeHtml: string, afterHtml: string): string[] {

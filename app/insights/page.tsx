@@ -7,79 +7,9 @@ import { InsightCard } from "@/components/insights/insight-card";
 import { generateObservationalInsights } from "@/lib/insights/generateObservationalInsights";
 import { PAGE_TAXONOMY, type PageType } from "@/lib/PAGE_TAXONOMY";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import Link from "next/link";
-
-type CompetitorRow = {
-  id: string;
-  name: string | null;
-  url: string;
-  last_crawled_at: string | null;
-  created_at: string;
-};
-
-type PageRow = {
-  competitor_id: string;
-  page_type: PageType;
-};
-
-type InsightRow = {
-  competitor_id: string;
-  page_type: PageType;
-  insight_text: string;
-  created_at: string;
-};
-
-function isKnownPageType(pageType: string | null | undefined): pageType is PageType {
-  if (!pageType) return false;
-  return (Object.values(PAGE_TAXONOMY) as string[]).includes(pageType);
-}
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return "No crawls yet";
-  const d = new Date(iso);
-  return d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-}
-
-function isActiveWithin14Days(iso: string | null): boolean {
-  if (!iso) return false;
-  const d = new Date(iso);
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 14);
-  return d >= cutoff;
-}
-
-function pageTypeToObservationLabel(pageType: PageType): string {
-  switch (pageType) {
-    case PAGE_TAXONOMY.HOMEPAGE:
-      return "Homepage monitored";
-    case PAGE_TAXONOMY.PRICING:
-      return "Pricing page detected";
-    case PAGE_TAXONOMY.PRODUCT_OR_SERVICES:
-      return "Services page tracked";
-    case PAGE_TAXONOMY.USE_CASES_OR_INDUSTRIES:
-      return "Messaging pages tracked";
-    case PAGE_TAXONOMY.CASE_STUDIES_OR_CUSTOMERS:
-      return "Case studies detected";
-    case PAGE_TAXONOMY.CTA_ELEMENTS:
-      return "Conversion pages monitored";
-    case PAGE_TAXONOMY.NAVIGATION:
-      return "Navigation structure tracked";
-    default:
-      return "Pages actively monitored";
-  }
-}
-
-function pageTypeToArea(pageType: PageType): "Pricing" | "Messaging" | "Services" {
-  if (pageType === PAGE_TAXONOMY.PRICING) return "Pricing";
-  if (pageType === PAGE_TAXONOMY.PRODUCT_OR_SERVICES) return "Services";
-  return "Messaging";
-}
-
-function marketActivityLevel(totalInsights14d: number): "Stable" | "Moderate" | "Active" {
-  if (totalInsights14d >= 10) return "Active";
-  if (totalInsights14d >= 4) return "Moderate";
-  return "Stable";
-}
 
 export default async function InsightsPage() {
   const workspaceId = await getOrCreateWorkspaceId();
@@ -96,146 +26,151 @@ export default async function InsightsPage() {
 
   const supabase = await createClient();
 
-  const { data: competitorsData } = await supabase
+  const { data: competitors } = await supabase
     .from("competitors")
-    .select("id, name, url, last_crawled_at, created_at")
-    .eq("workspace_id", workspaceId)
-    .order("name");
+    .select("id, name")
+    .eq("workspace_id", workspaceId);
 
-  const competitors = (competitorsData ?? []) as CompetitorRow[];
-  if (competitors.length === 0) {
+  if (!competitors || competitors.length === 0) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Insights</h1>
-        <EmptyState
-          title="No competitors tracked yet."
-          description="Add competitors to start generating executive-ready insights."
-        />
-      </div>
+      <EmptyState
+        title="No competitors tracked"
+        description="Add your first competitor to start generating strategic insights."
+      >
+        <Button asChild>
+          <Link href="/dashboard/competitors">Add Competitor</Link>
+        </Button>
+      </EmptyState>
     );
   }
 
-  const competitorIds = competitors.map((competitor) => competitor.id);
+  const competitorIds = competitors.map((c) => c.id);
 
-  const [pagesResult, insightsResult] = await Promise.all([
-    supabase.from("pages").select("competitor_id, page_type").in("competitor_id", competitorIds),
-    supabase
-      .from("insights")
-      .select("competitor_id, page_type, insight_text, created_at")
-      .in("competitor_id", competitorIds)
-      .order("created_at", { ascending: false })
-      .limit(500),
-  ]);
+  // Fetch all monitored page types for these competitors
+  const { data: monitoredPages } = await supabase
+    .from("pages")
+    .select("competitor_id, page_type")
+    .in("competitor_id", competitorIds);
 
-  const pages = ((pagesResult.data ?? []) as PageRow[]).filter((page) => isKnownPageType(page.page_type));
-  const insights = ((insightsResult.data ?? []) as InsightRow[]).filter((insight) =>
-    isKnownPageType(insight.page_type)
-  );
+  const compPageTypesMap = new Map<string, PageType[]>();
+  monitoredPages?.forEach(p => {
+    const types = compPageTypesMap.get(p.competitor_id) || [];
+    types.push(p.page_type as PageType);
+    compPageTypesMap.set(p.competitor_id, types);
+  });
+  const competitorNameMap = new Map(competitors.map((c) => [c.id, c.name]));
 
-  const pagesByCompetitor = new Map<string, PageType[]>();
-  for (const page of pages) {
-    const list = pagesByCompetitor.get(page.competitor_id) ?? [];
-    list.push(page.page_type);
-    pagesByCompetitor.set(page.competitor_id, list);
-  }
-
-  const insightsByCompetitor = new Map<string, InsightRow[]>();
-  for (const insight of insights) {
-    const list = insightsByCompetitor.get(insight.competitor_id) ?? [];
-    list.push(insight);
-    insightsByCompetitor.set(insight.competitor_id, list);
-  }
-
-  const activeCompetitors = competitors.filter((competitor) =>
-    isActiveWithin14Days(competitor.last_crawled_at)
-  );
-
-  const latestCrawl = competitors
-    .map((competitor) => competitor.last_crawled_at)
-    .filter((value): value is string => !!value)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
-
+  // Get recent insights (last 14 days)
   const fourteenDaysAgo = new Date();
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-  const insights14d = insights.filter((insight) => new Date(insight.created_at) >= fourteenDaysAgo);
 
-  const competitorNameMap = new Map(competitors.map((competitor) => [competitor.id, competitor.name ?? competitor.url]));
+  const { data: insights } = await supabase
+    .from("insights")
+    .select("*")
+    .in("competitor_id", competitorIds)
+    .gte("created_at", fourteenDaysAgo.toISOString())
+    .order("created_at", { ascending: false });
+
+  // Aggregated Stats
+  const totalInsights14d = insights?.length || 0;
   const competitorInsightCounts = new Map<string, number>();
-  for (const insight of insights14d) {
+  const categoryInsightCounts = new Map<string, number>();
+  const activeCompetitorIds = new Set<string>();
+
+  insights?.forEach((insight) => {
     competitorInsightCounts.set(
       insight.competitor_id,
-      (competitorInsightCounts.get(insight.competitor_id) ?? 0) + 1
+      (competitorInsightCounts.get(insight.competitor_id) || 0) + 1
     );
-  }
-  const mostActiveEntry = [...competitorInsightCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    categoryInsightCounts.set(
+      insight.insight_type,
+      (categoryInsightCounts.get(insight.insight_type) || 0) + 1
+    );
+    activeCompetitorIds.add(insight.competitor_id);
+  });
+
+  const mostActiveEntry = Array.from(competitorInsightCounts.entries()).sort((a, b) => b[1] - a[1])[0];
   const mostActiveCompetitor = mostActiveEntry
-    ? competitorNameMap.get(mostActiveEntry[0]) ?? "Unknown competitor"
+    ? competitorNameMap.get(mostActiveEntry[0]) ?? "Unknown"
     : "No active competitor";
   const mostActiveCount = mostActiveEntry?.[1] ?? 0;
 
-  const areaCounts = new Map<string, number>();
-  for (const insight of insights14d) {
-    const area = pageTypeToArea(insight.page_type);
-    areaCounts.set(area, (areaCounts.get(area) ?? 0) + 1);
-  }
-  const mostChangedAreaEntry = [...areaCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-  const mostChangedArea = mostChangedAreaEntry?.[0] ?? "No clear movement";
-  const mostChangedAreaCount = mostChangedAreaEntry?.[1] ?? 0;
+  const mostChangedEntry = Array.from(categoryInsightCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+  const mostChangedArea = mostChangedEntry?.[0]
+    ? mostChangedEntry[0].replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+    : "No major changes";
+  const mostChangedAreaCount = mostChangedEntry?.[1] ?? 0;
+
+  const marketActivityLevel =
+    totalInsights14d > 15 ? "Active" : totalInsights14d > 5 ? "Moderate" : "Stable";
+
+  const totalPagesMonitored = competitors.reduce(
+    (acc, c) => acc + (compPageTypesMap.get(c.id)?.length || 0),
+    0
+  );
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Insights</h1>
+    <div className="space-y-8 pb-12">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Strategic Intelligence Feed</h1>
+          <Badge variant="secondary" className="bg-purple-500/10 text-purple-600 border-purple-500/20">Alpha</Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Aggregated competitive insights across your tracked landscape.
+        </p>
+      </div>
 
-      <MarketSnapshot
-        competitorsTracked={competitors.length}
-        activeCompetitors={activeCompetitors.length}
-        pagesMonitored={pages.length}
-        latestCrawlLabel={formatTimestamp(latestCrawl)}
-      />
+      <div className="grid gap-6 lg:grid-cols-4">
+        <div className="lg:col-span-1">
+          <MarketSnapshot
+            competitorsTracked={competitors.length}
+            activeCompetitors={activeCompetitorIds.size}
+            pagesMonitored={totalPagesMonitored}
+            latestCrawlLabel={insights?.[0] ? new Date(insights[0].created_at).toLocaleDateString() : "No data"}
+          />
+        </div>
+        <div className="lg:col-span-3">
+          <AggregatedInsights
+            mostActiveCompetitor={mostActiveCompetitor}
+            mostActiveCount={mostActiveCount}
+            mostChangedArea={mostChangedArea}
+            mostChangedAreaCount={mostChangedAreaCount}
+            marketActivityLevel={marketActivityLevel}
+            totalInsights14d={totalInsights14d}
+          />
+        </div>
+      </div>
 
-      <AggregatedInsights
-        mostActiveCompetitor={mostActiveCompetitor}
-        mostActiveCount={mostActiveCount}
-        mostChangedArea={mostChangedArea}
-        mostChangedAreaCount={mostChangedAreaCount}
-        marketActivityLevel={marketActivityLevel(insights14d.length)}
-        totalInsights14d={insights14d.length}
-      />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">Competitive Landscape Analysis</h2>
+          <Link href="/dashboard/changes" className="text-sm text-primary hover:underline font-medium">
+            View All raw changes →
+          </Link>
+        </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {competitors.map((competitor) => {
-          const competitorName = competitor.name ?? competitor.url;
-          const competitorPages = pagesByCompetitor.get(competitor.id) ?? [];
-          const competitorInsights = insightsByCompetitor.get(competitor.id) ?? [];
-          const latestInsight = competitorInsights[0]?.insight_text ?? null;
-          const pageTypesWithInsights = competitorInsights.map((insight) => insight.page_type);
-          const observationalInsights = generateObservationalInsights({
-            pageTypes: competitorPages,
-            pageTypesWithInsights,
-            hasAnyInsights: competitorInsights.length > 0,
-          });
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {competitors.map((comp) => {
+            const compInsights = insights?.filter((i) => i.competitor_id === comp.id) || [];
+            const observational = generateObservationalInsights({
+              pageTypes: compPageTypesMap.get(comp.id) || [],
+              pageTypesWithInsights: compInsights.map((i) => i.page_type as PageType),
+              hasAnyInsights: compInsights.length > 0,
+            });
 
-          const statusLabel = competitor.last_crawled_at
-            ? isActiveWithin14Days(competitor.last_crawled_at)
-              ? "Actively Tracked"
-              : "Stable"
-            : "Not checked yet";
-
-          const observationLabels = Array.from(new Set(competitorPages)).map(pageTypeToObservationLabel);
-          const keyObservations = observationLabels.length > 0 ? observationLabels.slice(0, 3) : [];
-          const recentInsight = latestInsight ?? observationalInsights[0]?.text ?? "No strategic changes detected so far.";
-
-          return (
-            <InsightCard
-              key={competitor.id}
-              competitorName={competitorName}
-              statusLabel={statusLabel}
-              observations={keyObservations}
-              recentInsight={recentInsight}
-              href={`/insights/${competitor.id}`}
-            />
-          );
-        })}
+            return (
+              <InsightCard
+                key={comp.id}
+                competitorName={comp.name}
+                statusLabel={compInsights.length > 0 ? "Strategic Shift Detected" : "Monitoring Stable"}
+                observations={observational.slice(0, 3).map(o => o.text)}
+                recentInsight={compInsights[0]?.insight_text || "Continuous monitoring active across primary page types."}
+                href={`/insights/${comp.id}`}
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );

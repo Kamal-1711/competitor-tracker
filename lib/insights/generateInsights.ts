@@ -84,5 +84,5 @@ export function generateInsights(params: {
     }
   }
 
-  return [...dedupedByType.values()];
+  return Array.from(dedupedByType.values());
 }

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, User, Hexagon, LogOut, Moon, Sun } from "lucide-react";
+import { Bell, User, Hexagon, LogOut, Moon, Sun, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCompetitiveRadarStore } from "@/store/competitiveRadarStore";
 import { useCompetitiveRadarUi } from "@/components/competitive-radar-ui-context";
+import { useSidebar } from "./sidebar-context";
 
 function ThemeToggleButton() {
   const [isDark, setIsDark] = useState(true);
@@ -56,6 +57,7 @@ function ThemeToggleButton() {
 export function TopBar() {
   const { alerts } = useCompetitiveRadarStore();
   const { togglePanel } = useCompetitiveRadarUi();
+  const { toggle, isOpen } = useSidebar();
 
   const { badgeCount, badgeColor } = useMemo(() => {
     const unreadHigh = alerts.filter((a) => !a.read && a.severity === "high").length;
@@ -72,14 +74,31 @@ export function TopBar() {
   }, [alerts]);
 
   return (
-    <header className="glass-subtle flex h-14 w-full items-center border-b border-border/60 px-4 lg:px-6">
-      <div className="flex items-center gap-2 font-bold md:hidden">
-        <Hexagon className="h-6 w-6" />
-        <span className="text-lg">Competitor Tracker</span>
-      </div>
-      <div className="hidden md:flex items-center gap-2 text-sm font-medium text-muted-foreground">
-        <span className="text-muted-foreground/70">Workspace</span>
-        <span className="text-foreground">My Workspace</span>
+    <header className="glass-subtle bg-transparent flex h-14 w-full items-center border-b border-border/60 px-4 lg:px-6">
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-muted-foreground mr-1"
+          onClick={toggle}
+        >
+          <Menu className="h-5 w-5" />
+          <span className="sr-only">Toggle Sidebar</span>
+        </Button>
+
+        <div className="flex items-center gap-2 font-bold md:hidden">
+          {!isOpen && (
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary animate-glow">
+                <Hexagon className="h-5 w-5 fill-primary/20" />
+              </div>
+              <span className="text-lg text-gradient whitespace-nowrap">Insight Compass</span>
+            </div>
+          )}
+        </div>
+        <div className="hidden md:flex items-center gap-2 text-sm font-medium text-muted-foreground ml-2">
+          <span className="text-foreground">My Workspace</span>
+        </div>
       </div>
 
       <div className="ml-auto flex items-center gap-2">
@@ -108,10 +127,10 @@ export function TopBar() {
           <span className="sr-only">Profile</span>
         </Button>
         <form action="/api/auth/logout" method="POST">
-           <Button variant="ghost" size="icon" type="submit" className="text-muted-foreground" title="Sign out">
-             <LogOut className="h-5 w-5" />
-             <span className="sr-only">Sign out</span>
-           </Button>
+          <Button variant="ghost" size="icon" type="submit" className="text-muted-foreground" title="Sign out">
+            <LogOut className="h-5 w-5" />
+            <span className="sr-only">Sign out</span>
+          </Button>
         </form>
       </div>
     </header>

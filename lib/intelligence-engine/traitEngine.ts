@@ -2,7 +2,7 @@ import type { PageType } from "@/lib/PAGE_TAXONOMY";
 import type { RawSignals } from "./signalProcessor";
 
 export type EvidenceItem = {
-  source: "snapshot" | "webpage_signal" | "coverage" | "activity";
+  source: "snapshot" | "webpage_signal" | "coverage" | "activity" | "services_snapshot" | "case_studies" | "pricing" | "changes";
   key: string;
   value: unknown;
 };
@@ -43,10 +43,10 @@ export function deriveCompetitiveTraits(signals: RawSignals): CompetitiveTraits 
     serviceSectionCount == null
       ? "unknown"
       : serviceSectionCount > 6
-      ? "broad"
-      : serviceSectionCount > 0
-      ? "focused"
-      : "unknown";
+        ? "broad"
+        : serviceSectionCount > 0
+          ? "focused"
+          : "unknown";
 
   const serviceFocus: CompetitiveTraits["service_focus"]["value"] =
     signals.services?.snapshot?.primary_focus ?? "unknown";

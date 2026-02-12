@@ -140,15 +140,15 @@ export function extractDomainKeywordProfile(params: {
     }
 
     const uniqueGrams = new Set(grams);
-    for (const gram of uniqueGrams) {
+    Array.from(uniqueGrams).forEach((gram) => {
       pageCount.set(gram, (pageCount.get(gram) ?? 0) + 1);
-    }
+    });
 
     const h1Tokens = tokenize(h1);
     const h1Grams = new Set(buildNgrams(h1Tokens));
-    for (const gram of h1Grams) {
+    Array.from(h1Grams).forEach((gram) => {
       h1Appearance.set(gram, (h1Appearance.get(gram) ?? 0) + 1);
-    }
+    });
   }
 
   const profile: DomainKeywordProfile[] = Array.from(frequency.entries())

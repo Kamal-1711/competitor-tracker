@@ -102,6 +102,7 @@ export async function addCompetitor(formData: FormData): Promise<AddCompetitorRe
   }
 
   revalidatePath(getCompetitorsPath());
+  revalidatePath("/dashboard");
   return { ok: true };
 }
 
@@ -206,17 +207,17 @@ export type CrawlJobStatus =
 
 export type CrawlJobResult =
   | {
-      ok: true;
-      job: {
-        id: string;
-        competitor_id: string;
-        status: CrawlJobStatus;
-        created_at: string;
-        started_at: string | null;
-        completed_at: string | null;
-        error_message: string | null;
-      };
-    }
+    ok: true;
+    job: {
+      id: string;
+      competitor_id: string;
+      status: CrawlJobStatus;
+      created_at: string;
+      started_at: string | null;
+      completed_at: string | null;
+      error_message: string | null;
+    };
+  }
   | { ok: false; error: string };
 
 export async function getCrawlJob(jobId: string): Promise<CrawlJobResult> {
@@ -317,3 +318,51 @@ export async function triggerCrawlNow(competitorId: string): Promise<TriggerCraw
 
   return { ok: true, jobId: String(jobId) };
 }
+
+export async function recoverSharedCompetitors() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not authenticated" };
+
+  // 1. Get user workspace
+  const { data: userWorkspace } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("owner_id", user.id)
+    .single();
+
+  if (!userWorkspace) return { ok: false, error: "User workspace not found" };
+
+  // 2. Get shared workspace (the one with null owner)
+  const { data: sharedWorkspace } = await supabase
+    .from("workspaces")
+    .select("id")
+    .is("owner_id", null)
+    .single();
+
+  if (!sharedWorkspace || sharedWorkspace.id === userWorkspace.id) {
+    return { ok: false, error: "No shared workspace found to recover from" };
+  }
+
+  // 3. Move competitors
+  const { error: moveError } = await supabase
+    .from("competitors")
+    .update({ workspace_id: userWorkspace.id })
+    .eq("workspace_id", sharedWorkspace.id);
+
+  if (moveError) return { ok: false, error: moveError.message };
+
+  // 4. Move related movements/insights (if they have workspace_id)
+  // Some tables might link via competitor_id which doesn't change, but some might have workspace_id
+  await supabase
+    .from("strategic_movements")
+    .update({ workspace_id: userWorkspace.id })
+    .eq("workspace_id", sharedWorkspace.id);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/insights");
+  revalidatePath("/dashboard/competitors");
+
+  return { ok: true };
+}
+

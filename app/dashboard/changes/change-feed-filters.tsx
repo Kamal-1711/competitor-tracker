@@ -44,12 +44,20 @@ export function ChangeFeedFilters({
   const searchParams = useSearchParams();
 
   const setFilter = useCallback(
-    (key: string, value: string | undefined) => {
-      const next = new URLSearchParams(searchParams.toString());
-      if (value) next.set(key, value);
-      else next.delete(key);
-      next.delete("page");
-      router.push(`/dashboard/changes?${next.toString()}`);
+    (key: string, value: string | undefined | null) => {
+      const current = new URLSearchParams(Array.from(searchParams.entries()));
+
+      if (value && value !== "all") {
+        current.set(key, value);
+      } else {
+        current.delete(key);
+      }
+
+      current.delete("page");
+      const search = current.toString();
+      const query = search ? `?${search}` : "";
+
+      router.push(`/dashboard/changes${query}`);
     },
     [router, searchParams]
   );

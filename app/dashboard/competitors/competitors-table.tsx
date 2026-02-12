@@ -208,6 +208,9 @@ export function CompetitorsTable({
                           src={c.logo_url}
                           alt={`${c.name || c.url} logo`}
                           className="h-6 w-6 rounded border bg-muted object-contain"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
                         />
                       )}
                       <Link
@@ -228,74 +231,74 @@ export function CompetitorsTable({
                       {c.url}
                     </a>
                   </TableCell>
-                    <TableCell>
-                      <Select
-                        value={c.crawl_frequency}
-                        onValueChange={(value) => onFrequencyChange(c.id, value)}
+                  <TableCell>
+                    <Select
+                      value={c.crawl_frequency}
+                      onValueChange={(value) => onFrequencyChange(c.id, value)}
+                      disabled={isPending}
+                    >
+                      <SelectTrigger className="w-[130px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(c.last_crawled_at)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CrawlStatus lastCrawledAt={c.last_crawled_at} />
+                      <JobStatusBadge job={latestJobs[c.id]} />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2 text-xs font-normal rounded-md border-border/60 bg-transparent hover:bg-white/5"
+                        onClick={() => onEdit(c)}
                         disabled={isPending}
                       >
-                        <SelectTrigger className="w-[130px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="daily">Daily</SelectItem>
-                          <SelectItem value="weekly">Weekly</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDate(c.last_crawled_at)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <CrawlStatus lastCrawledAt={c.last_crawled_at} />
-                        <JobStatusBadge job={latestJobs[c.id]} />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2 text-xs font-normal rounded-md border-border/60 bg-transparent hover:bg-white/5"
-                          onClick={() => onEdit(c)}
-                          disabled={isPending}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-3 text-xs font-medium rounded-md border-border/70 bg-transparent text-foreground/90 hover:bg-white/5"
-                          onClick={() => onCrawlNow(c.id)}
-                          disabled={
-                            isPending ||
-                            crawlingJobId !== null ||
-                            (latestJobs[c.id]?.status === "pending" || latestJobs[c.id]?.status === "running")
-                          }
-                        >
-                          {crawlingCompetitorId === c.id ? "Running…" : "Check for competitor updates"}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 px-2 text-xs font-normal text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md"
-                          asChild
-                        >
-                          <Link href={`/insights/${c.id}`}>View insights →</Link>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 px-2 text-xs font-normal text-red-400 hover:bg-red-500/10"
-                          onClick={() => onDelete(c.id)}
-                          disabled={isPending}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-3 text-xs font-medium rounded-md border-border/70 bg-transparent text-foreground/90 hover:bg-white/5"
+                        onClick={() => onCrawlNow(c.id)}
+                        disabled={
+                          isPending ||
+                          crawlingJobId !== null ||
+                          (latestJobs[c.id]?.status === "pending" || latestJobs[c.id]?.status === "running")
+                        }
+                      >
+                        {crawlingCompetitorId === c.id ? "Running…" : "Check for competitor updates"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs font-normal text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md"
+                        asChild
+                      >
+                        <Link href={`/insights/${c.id}`}>View insights →</Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs font-normal text-red-400 hover:bg-red-500/10"
+                        onClick={() => onDelete(c.id)}
+                        disabled={isPending}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               );
             })}
           </TableBody>

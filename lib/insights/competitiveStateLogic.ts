@@ -86,24 +86,23 @@ export function deriveCompetitiveState(params: {
 
   const coverageLine =
     trackedPageTypes.length > 0
-      ? `Monitoring currently covers ${trackedPageTypes.length} strategic area${
-          trackedPageTypes.length === 1 ? "" : "s"
-        }.`
+      ? `Monitoring currently covers ${trackedPageTypes.length} strategic area${trackedPageTypes.length === 1 ? "" : "s"
+      }.`
       : "Monitoring has started and will become more comprehensive as pages are detected.";
 
   const statusLine =
     status === "Active"
       ? "Recent activity indicates meaningful strategic movement over the last 30 days."
       : status === "Moderate"
-      ? "Recent activity shows selective updates across monitored areas."
-      : "Recent activity remains limited, indicating short-term strategic stability.";
+        ? "Recent activity shows selective updates across monitored areas."
+        : "Recent activity remains limited, indicating short-term strategic stability.";
 
   const postureLine =
     competitivePosture === "Experimenting"
       ? "Current signals suggest controlled experimentation in positioning and monetization."
       : competitivePosture === "Expanding"
-      ? "Current signals suggest expansion in information architecture or strategic surface area."
-      : "Current signals suggest the competitor is maintaining its current market position.";
+        ? "Current signals suggest expansion in information architecture or strategic surface area."
+        : "Current signals suggest the competitor is maintaining its current market position.";
 
   return {
     status,
@@ -130,13 +129,13 @@ export function deriveFocusSignals(params: {
     pageCounts.set(insight.page_type, (pageCounts.get(insight.page_type) ?? 0) + 1);
   }
 
-  const ranked = [...pageCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const ranked = Array.from(pageCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const primaryFocusAreas =
     ranked.length > 0
       ? ranked.map(([pageType]) => getPageTypeDefinition(pageType).label)
       : trackedPageTypes.length > 0
-      ? trackedPageTypes.slice(0, 3).map((pageType) => getPageTypeDefinition(pageType).label)
-      : ["No clear movement yet across monitored areas"];
+        ? trackedPageTypes.slice(0, 3).map((pageType) => getPageTypeDefinition(pageType).label)
+        : ["No clear movement yet across monitored areas"];
 
   const hasPricingChange = (pageCounts.get(PAGE_TAXONOMY.PRICING) ?? 0) > 0;
   const hasHomepageChange = (pageCounts.get(PAGE_TAXONOMY.HOMEPAGE) ?? 0) > 0;
@@ -191,11 +190,11 @@ export function deriveStrategicWatchlist(params: {
   return watchlist.length > 0
     ? watchlist
     : [
-        {
-          area: "Core strategic pages",
-          rationale: "Monitoring is active and will flag high-impact strategic surfaces as discovered.",
-        },
-      ];
+      {
+        area: "Core strategic pages",
+        rationale: "Monitoring is active and will flag high-impact strategic surfaces as discovered.",
+      },
+    ];
 }
 
 export function derivePmInterpretation(params: {
@@ -225,8 +224,8 @@ export function derivePmInterpretation(params: {
     status === "Stable"
       ? "This stability period suggests focus may be on internal execution."
       : status === "Moderate"
-      ? "Selective movement suggests focused updates rather than broad repositioning."
-      : "Elevated movement suggests active iteration across multiple strategic surfaces.";
+        ? "Selective movement suggests focused updates rather than broad repositioning."
+        : "Elevated movement suggests active iteration across multiple strategic surfaces.";
 
   const coverageNote =
     trackedPageTypes.length >= 2
@@ -253,8 +252,8 @@ export function deriveKeySignals(params: {
       params.status === "Active"
         ? "Active repositioning"
         : params.status === "Moderate"
-        ? "Selective positioning updates"
-        : "Stable positioning",
+          ? "Selective positioning updates"
+          : "Stable positioning",
     confidence: confidenceFromDataDensity(params.insightsLast30d.length),
   };
 
@@ -299,8 +298,8 @@ export function deriveKeySignals(params: {
       enterpriseHits > growthHits
         ? "Enterprise-led pricing"
         : growthHits > enterpriseHits
-        ? "Growth-led pricing"
-        : "Balanced or unchanged pricing posture",
+          ? "Growth-led pricing"
+          : "Balanced or unchanged pricing posture",
     confidence: confidenceFromDataDensity(Math.max(enterpriseHits, growthHits)),
   };
 

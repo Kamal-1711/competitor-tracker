@@ -19,6 +19,7 @@ export type SnapshotSignal = {
   h2_headings?: string[] | null;
   h3_headings?: string[] | null;
   list_items?: string[] | null;
+  nav_labels?: string[] | null;
   structured_content?: unknown;
 };
 

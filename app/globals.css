@@ -4,121 +4,135 @@
 
 @layer base {
   :root {
-    /* Light theme – softer, less stark */
-    --background: 210 24% 96%;         /* soft slate-gray background */
-    --foreground: 222 47% 11%;         /* dark slate text */
-    --card: 0 0% 100%;                 /* white cards on soft background */
+    /* Refined Light Theme – Vibrancy & Depth */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 222 84% 56%;
-    --primary-foreground: 222 100% 10%;
-    --secondary: 210 24% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 24% 96%;
-    --muted-foreground: 215 16% 40%;
-    --accent: 210 24% 96%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 222 84% 56%;
-    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-    --radius: 0.5rem;
+    --primary: 250 84% 54%;
+    /* Vibrant Indigo/Violet */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222 47% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 250 84% 54%;
+    --accent-foreground: 222 47% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 250 84% 54%;
+    --radius: 0.75rem;
   }
+
   .dark {
-    /* Premium dark (default), tuned for comfort */
-    --background: 222 47% 6.5%;
-    --foreground: 210 20% 92%;
-    --card: 222 32% 12%;
-    --card-foreground: 210 20% 92%;
-    --popover: 222 32% 10%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 222 84% 56%;
-    --primary-foreground: 222 100% 10%;
-    --secondary: 240 5% 18%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 240 6% 16%;
-    --muted-foreground: 215 12% 68%;
-    --accent: 260 83% 70%;
-    --accent-foreground: 222 100% 10%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 215 20% 20%;
-    --input: 215 20% 20%;
-    --ring: 222 84% 56%;
-    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    /* Premium Dark Theme – Depth & Neon Accents */
+    --background: 222 47% 4%;
+    --foreground: 213 31% 91%;
+    --card: 222 47% 8%;
+    --card-foreground: 213 31% 91%;
+    --popover: 222 47% 5%;
+    --popover-foreground: 213 31% 91%;
+    --primary: 250 84% 64%;
+    /* Brighter Neon Violet */
+    --primary-foreground: 222 47% 2%;
+    --secondary: 222 47% 12%;
+    --secondary-foreground: 213 31% 91%;
+    --muted: 222 47% 12%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 250 84% 64%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 32% 17%;
+    --input: 217 32% 17%;
+    --ring: 250 84% 64%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
 body {
-  color: hsl(var(--foreground));
-  /* Gentle light background with subtle tint */
   background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 55%),
-    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.06), transparent 55%),
-    linear-gradient(145deg, hsl(var(--background)) 0%, hsl(var(--background)) 40%, hsl(var(--background)) 100%);
-  font-family:
-    var(--font-sans),
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "SF Pro Text",
-    "Segoe UI",
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+    radial-gradient(at 0% 0%, hsla(250, 84%, 54%, 0.15) 0, transparent 50%),
+    radial-gradient(at 50% 0%, hsla(220, 84%, 54%, 0.1) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(280, 84%, 54%, 0.15) 0, transparent 50%),
+    hsl(var(--background));
+  background-attachment: fixed;
 }
 
 .dark body {
-  color: hsl(var(--foreground));
-  /* Layered, textured dark background */
   background:
-    radial-gradient(circle at top left, rgba(94, 234, 212, 0.05), transparent 55%),
-    radial-gradient(circle at top right, rgba(129, 140, 248, 0.06), transparent 55%),
-    radial-gradient(circle at bottom, rgba(251, 113, 133, 0.04), transparent 60%),
-    linear-gradient(145deg, #020617 0%, #020617 40%, #020617 100%);
+    radial-gradient(at 0% 0%, hsla(250, 84%, 64%, 0.1) 0, transparent 50%),
+    radial-gradient(at 50% 0%, hsla(220, 84%, 64%, 0.05) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(280, 84%, 64%, 0.1) 0, transparent 50%),
+    #02040a;
+  background-attachment: fixed;
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-
   .glass-panel {
-    /* Light mode: soft white glass */
-    background-color: rgba(255, 255, 255, 0.9);
-    border-radius: 0.75rem;
-    border: 1px solid hsla(var(--border), 0.7);
-    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
-    backdrop-filter: blur(18px) saturate(120%);
+    background-color: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
   }
 
   .glass-subtle {
-    /* Light mode: very soft panel */
-    background-color: rgba(255, 255, 255, 0.96);
-    border-radius: 0.7rem;
-    border: 1px solid hsla(var(--border), 0.6);
-    backdrop-filter: blur(14px) saturate(115%);
+    background-color: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(12px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 16px 0 rgba(31, 38, 135, 0.05);
   }
 
   .dark .glass-panel {
-    background-color: hsla(222, 32%, 10%, 0.9);
-    border: 1px solid hsla(var(--border), 0.45);
-    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.55);
-    backdrop-filter: blur(18px) saturate(130%);
+    background-color: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   }
 
   .dark .glass-subtle {
-    background-color: hsla(222, 32%, 9%, 0.85);
-    border: 1px solid hsla(var(--border), 0.4);
-    backdrop-filter: blur(14px) saturate(125%);
+    background-color: rgba(30, 41, 59, 0.45);
+    backdrop-filter: blur(12px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.2);
   }
 
-  .border-glow {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-indigo-400 to-purple-500;
+  }
+
+  .animate-glow {
+    animation: glow 4s ease-in-out infinite alternate;
+  }
+
+  @keyframes glow {
+    from {
+      box-shadow: 0 0 10px -5px hsl(var(--primary));
+    }
+
+    to {
+      box-shadow: 0 0 20px 2px hsla(var(--primary), 0.3);
+    }
+  }
+
+  .mesh-shadow {
     box-shadow:
-      0 0 0 1px rgba(148, 163, 253, 0.26),
-      0 0 18px rgba(129, 140, 248, 0.25);
+      0 0 40px -10px hsla(var(--primary), 0.2),
+      0 0 20px -5px hsla(var(--secondary), 0.1);
   }
 }

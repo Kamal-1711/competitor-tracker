@@ -85,7 +85,7 @@ function normalizePlanName(name: string | null | undefined): string {
   return (name ?? "").replace(/\s+/g, " ").trim();
 }
 
-function extractPlanFromContainer(el: cheerio.Element, $: cheerio.CheerioAPI): ExtractedPricingPlan | null {
+function extractPlanFromContainer(el: any, $: cheerio.CheerioAPI): ExtractedPricingPlan | null {
   const container = $(el);
   const text = container.text().replace(/\s+/g, " ").trim();
   if (!text) return null;

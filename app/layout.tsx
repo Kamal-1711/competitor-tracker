@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
 export const metadata: Metadata = {
-  title: "Competitor Tracker",
-  description: "Track and monitor competitors",
+  title: "Insight Compass",
+  description: "Track and monitor competitors with strategic precision",
 };
 
 export default function RootLayout({
@@ -13,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen font-sans">
+      <body className={`min-h-screen ${inter.className} ${inter.variable}`}>
         {children}
       </body>
     </html>

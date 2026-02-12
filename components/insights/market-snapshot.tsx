@@ -12,7 +12,7 @@ export function MarketSnapshot({
   latestCrawlLabel: string;
 }) {
   return (
-    <Card>
+    <Card className="glass-subtle bg-transparent">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Market Snapshot (Last 14 days)</CardTitle>
       </CardHeader>

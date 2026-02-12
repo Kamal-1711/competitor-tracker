@@ -1,5 +1,6 @@
 import { chromium, type BrowserContext } from "playwright";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { extractAndPersistBlogPosts } from "./extractBlogPosts";
 import * as cheerio from "cheerio";
 import crypto from "node:crypto";
 import { compareSnapshots } from "@/lib/change-detection/compareSnapshots";
@@ -160,23 +161,32 @@ const DEFAULT_USER_AGENTS = [
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/132.0",
 ];
 
-const MAX_PAGES_TO_CRAWL = 8;
-const MAX_SEO_CONTENT_PAGES = 3;
+const MAX_PAGES_TO_CRAWL = 12;
+const MAX_SEO_CONTENT_PAGES = 5;
 
 function classifySeoContentPath(url: string): CrawlPageType | null {
   const lower = url.toLowerCase();
   if (/\/case-stud(y|ies)(\/|$)/i.test(lower)) {
     return PAGE_TAXONOMY.CASE_STUDIES_OR_CUSTOMERS;
   }
-  if (/\/(blog|resources|insights|knowledge|guides)(\/|$)/i.test(lower)) {
-    return PAGE_TAXONOMY.USE_CASES_OR_INDUSTRIES;
+  // Catch-all for anything that looks like a blog, news, or resource center
+  if (/\/(blog|blog-posts|blogposts|resources|insights|knowledge|guides|news|articles|press|media|updates)(\/|$)/i.test(lower)) {
+    return PAGE_TAXONOMY.BLOG;
   }
   return null;
 }
 
 function classifyLink(text: string, href: string): CrawlPageType | null {
   if (shouldIgnorePage(href, text)) return null;
-  return detectPageTypeFromNav(text, href) ?? classifySeoContentPath(href);
+
+  // Priority Check: If URL strongly indicates a blog/news section, respect that over ambiguous nav text
+  // e.g. "Resources" link pointing to /blog should be BLOG, not USE_CASES
+  const urlType = classifySeoContentPath(href);
+  if (urlType === PAGE_TAXONOMY.BLOG) {
+    return PAGE_TAXONOMY.BLOG;
+  }
+
+  return detectPageTypeFromNav(text, href) ?? urlType;
 }
 
 function toDbPageType(pageType: CrawlPageType): DbPageType {
@@ -629,8 +639,8 @@ function analyzeServiceContent(html: string): ServiceSnapshot {
     strategicCount > executionCount
       ? "Strategic"
       : executionCount > strategicCount
-      ? "Execution"
-      : "Balanced";
+        ? "Execution"
+        : "Balanced";
 
   return {
     strategic_keywords_count: strategicCount,
@@ -759,7 +769,8 @@ function pickTargetUrls(
       if (selectedPages.length >= MAX_PAGES_TO_CRAWL) break;
 
       // Skip if this page type is already selected, or if URL is already crawled
-      if (pageType && selectedByType.has(pageType)) continue;
+      // EXCEPTION: Always crawl /blog or /news if mandatory, even if we found another blog page
+      if (pageType && selectedByType.has(pageType) && pageType !== PAGE_TAXONOMY.BLOG) continue;
       if (selectedPages.some((p) => p.url === url)) continue;
 
       // Add this mandatory URL if we have a page type
@@ -1147,18 +1158,18 @@ async function capturePageWithRetries(params: {
       const primaryHeadline = inferredPageType === PAGE_TAXONOMY.HOMEPAGE ? extractPrimaryHeadline(html) : null;
       const navSignals = params.pageType === PAGE_TAXONOMY.HOMEPAGE
         ? {
-            primaryHeadline,
-            topNavigation: extractTopNavigationLinks(html, params.url),
-            footerLinks: extractFooterLinks(html, params.url),
-            ...(() => {
-              const top = extractTopCtas(html, params.url, 2);
-              return {
-                primaryCtaText: top[0]?.text ?? null,
-                primaryCtaHref: top[0]?.href ?? null,
-                secondaryCtaText: top[1]?.text ?? null,
-              };
-            })(),
-          }
+          primaryHeadline,
+          topNavigation: extractTopNavigationLinks(html, params.url),
+          footerLinks: extractFooterLinks(html, params.url),
+          ...(() => {
+            const top = extractTopCtas(html, params.url, 2);
+            return {
+              primaryCtaText: top[0]?.text ?? null,
+              primaryCtaHref: top[0]?.href ?? null,
+              secondaryCtaText: top[1]?.text ?? null,
+            };
+          })(),
+        }
         : {};
       const signals: PageSignals = { ...navSignals };
       return {
@@ -1205,13 +1216,13 @@ async function withBrowser<T>(headless: boolean, fn: (contextFactory: (userAgent
 
       // Hide webdriver + common automation fingerprints.
       await context.addInitScript(() => {
-        // @ts-expect-error - injected in browser runtime
+        // injected in browser runtime
         Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-        // @ts-expect-error - injected in browser runtime
+        // injected in browser runtime
         Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
-        // @ts-expect-error - injected in browser runtime
+        // injected in browser runtime
         Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
-        // @ts-expect-error - injected in browser runtime
+        // injected in browser runtime
         (window as any).chrome = (window as any).chrome ?? { runtime: {} };
       });
 
@@ -1419,6 +1430,26 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
           capturedAt: new Date().toISOString(),
         });
 
+
+        // Extract Blog Posts if this is a blog page or homepage
+        if (page.pageType === PAGE_TAXONOMY.BLOG || page.pageType === PAGE_TAXONOMY.HOMEPAGE) {
+          try {
+            await extractAndPersistBlogPosts(page.html, page.url, competitorId, supabase);
+          } catch (blogErr) {
+            console.error(`[Crawl] Blog extraction failed for ${page.url}`, blogErr);
+          }
+        }
+
+        // Enhance metadata (logo, name) if homepage
+        if (page.pageType === PAGE_TAXONOMY.HOMEPAGE) {
+          try {
+            const { enhanceCompetitorMetadata } = await import("@/lib/metadata-enhancer");
+            await enhanceCompetitorMetadata(competitorId, page.url, supabase);
+          } catch (metaErr) {
+            console.error(`[Crawl] Metadata enhancement failed`, metaErr);
+          }
+        }
+
         if (page.pageType === PAGE_TAXONOMY.PRICING) {
           await persistPricingIntelligence({
             supabase,
@@ -1429,6 +1460,16 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
           }).catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             errors.push(`Pricing intelligence save failed for ${page.url}: ${msg}`);
+          });
+        }
+
+        console.log(`[CrawlWorker] Page: ${page.url} identified as: ${page.pageType}. Content length: ${page.html.length}`);
+
+        if (page.pageType === PAGE_TAXONOMY.BLOG || page.url.includes('/blog/') || page.url.includes('/news/')) {
+          console.log(`[CrawlWorker] Triggering blog extraction for ${page.url}...`);
+          await extractAndPersistBlogPosts(page.html, page.url, competitorId, supabase).catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            errors.push(`Blog extraction failed for ${page.url}: ${msg}`);
           });
         }
 
@@ -1477,8 +1518,8 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
               primaryCtaText: previousSnapshot.primary_cta_text ?? null,
               navItems: Array.isArray(previousSnapshot.nav_items)
                 ? previousSnapshot.nav_items
-                    .map((item: unknown) => (typeof item === "string" ? item : ""))
-                    .filter(Boolean)
+                  .map((item: unknown) => (typeof item === "string" ? item : ""))
+                  .filter(Boolean)
                 : [],
             },
             afterSignals: {

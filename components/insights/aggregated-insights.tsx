@@ -17,7 +17,7 @@ export function AggregatedInsights({
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <Card>
+      <Card className="glass-subtle bg-transparent">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Most Active Competitor (14 days)</CardTitle>
         </CardHeader>
@@ -29,7 +29,7 @@ export function AggregatedInsights({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="glass-subtle bg-transparent">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Most Changed Area</CardTitle>
         </CardHeader>

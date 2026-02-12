@@ -40,10 +40,12 @@ export type {
 export * as StrategicModel from "./strategicModel/orchestrator";
 export type {
   StrategicDimensions,
+  DimensionKey,
   StrategicRawSignals,
   StrategicModelResult,
   CompetitivePressureResult,
   TrajectoryAnalysis,
+  SaturationRisk,
 } from "./strategicModel/types";
 
 export { buildCompetitiveSnapshot } from "./snapshotEngine";

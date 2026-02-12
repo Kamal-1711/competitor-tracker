@@ -42,6 +42,16 @@ export function initializeSocketServer(): Server | null {
       });
     });
 
+    httpServer.on("error", (err: any) => {
+      if (err.code === "EADDRINUSE") {
+        console.warn(`Port ${port} is already in use. Socket server will not be active for this instance.`);
+      } else {
+        console.error("Socket server error:", err);
+      }
+      io = null;
+      httpServer = null;
+    });
+
     httpServer.listen(port, () => {
       console.log(`Socket server running on port ${port}`);
     });
