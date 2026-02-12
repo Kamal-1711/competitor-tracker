@@ -8,11 +8,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { PAGE_TAXONOMY, type PageType } from "@/lib/PAGE_TAXONOMY";
 import {
   deriveCompetitiveState,
-  deriveFocusSignals,
-  deriveKeySignals,
   deriveServiceInsights,
   deriveStrategicConsiderations,
-  deriveWhatToWatchNext,
   type ChangeLike,
   type InsightLike,
   type ServiceSnapshot,
@@ -29,17 +26,8 @@ import {
   SearchIntelligence,
   type SEOPageData,
 } from "@/lib/intelligence-engine";
-import { CompetitiveStateSection } from "@/components/insights/competitive-state-section";
-import { FocusSignalsSection } from "@/components/insights/focus-signals-section";
-import { KeySignalsSection } from "@/components/insights/key-signals-section";
-import { CompanyBaselineSection } from "@/components/insights/company-baseline-section";
-import { CompetitiveSnapshotSection } from "@/components/insights/competitive-snapshot-section";
-import { SearchPositioningSection } from "@/components/insights/search-positioning-section";
-import { ServiceIntelligenceSection } from "@/components/insights/service-intelligence-section";
-import { WebpageDerivedSignalsSection } from "@/components/insights/webpage-derived-signals-section";
-import { StrengthsRisksSection } from "@/components/insights/strengths-risks-section";
-import { StrategicImplicationsSection } from "@/components/insights/strategic-implications-section";
-import { WhatToWatchSection } from "@/components/insights/what-to-watch-section";
+import { InsightsRealtimeListener } from "./insights-realtime-listener";
+import { InsightsLiveSignalIndicator } from "./live-signal-indicator";
 
 type PageRow = {
   page_type: PageType;
@@ -257,10 +245,6 @@ export default async function InsightDetailPage({
     insightsLast30d: insightsLast30d as InsightLike[],
     changesLast30d,
   });
-  const focusSignals = deriveFocusSignals({
-    trackedPageTypes: uniquePageTypes,
-    insightsLast30d: insightsLast30d as InsightLike[],
-  });
 
   const webpageSignals = insights.filter((insight) => insight.insight_type === "webpage_signal");
   const messagingSignalsRaw = webpageSignals
@@ -317,14 +301,6 @@ export default async function InsightDetailPage({
       ? ["Capability focus is derived from repeated product and services section headings."]
       : ["Capability focus signals will populate as product/services pages are detected."];
 
-  const keySignals = deriveKeySignals({
-    status: competitiveState.status,
-    insightsLast30d: insightsLast30d as InsightLike[],
-  });
-  const watchNextItems = deriveWhatToWatchNext({
-    status: competitiveState.status,
-    keySignals,
-  });
   const serviceInsights = deriveServiceInsights(serviceSnapshot);
   const serviceConsiderations = deriveStrategicConsiderations(serviceSnapshot);
   const serviceOverview = {
@@ -335,21 +311,19 @@ export default async function InsightDetailPage({
   const serviceEvidenceHeadings = latestServicesSnapshot?.h2_headings ?? [];
 
   // Baseline profile wiring
-  const baselineSnapshots = (baselineSnapshotsResult.data ?? []) as Array<
-    {
-      page_type: PageType;
-      url: string;
-      http_status: number | null;
-      title: string | null;
-      h1_text: string | null;
-      h2_headings: string[] | null;
-      h3_headings: string[] | null;
-      list_items: string[] | null;
-      nav_labels: string[] | null;
-      structured_content: unknown;
-      captured_at: string | null;
-    }
-  >;
+  const baselineSnapshots = (baselineSnapshotsResult.data ?? []) as Array<{
+    page_type: PageType;
+    url: string;
+    http_status: number | null;
+    title: string | null;
+    h1_text: string | null;
+    h2_headings: string[] | null;
+    h3_headings: string[] | null;
+    list_items: string[] | null;
+    nav_labels: string[] | null;
+    structured_content: unknown;
+    captured_at: string | null;
+  }>;
 
   function latestSnapshotOf(pageType: PageType): SnapshotSignal | null {
     const snapshot = baselineSnapshots.find((s) => s.page_type === pageType);
@@ -516,155 +490,490 @@ export default async function InsightDetailPage({
   const narrativeRisks = intelligence.narrative.risks.map((r) => r.text);
   const strategicNarrative = intelligence.narrative.strategicImplications.map((i) => ({
     text: i.text,
-    confidence: intelligence.confidence.level,
   }));
 
+  const domainLabel = (() => {
+    try {
+      const hostname = new URL(competitor.url).hostname;
+      return hostname.replace(/^www\./i, "") || competitor.url;
+    } catch {
+      return competitor.url;
+    }
+  })();
+
+  const lastAnalyzedIso =
+    competitor.last_crawled_at ??
+    latestServicesSnapshot?.captured_at ??
+    seoHistory[seoHistory.length - 1]?.captured_at ??
+    null;
+  const lastAnalyzedLabel = formatDate(lastAnalyzedIso);
+
+  const homepageBaseline =
+    baselineSnapshots.find((s) => s.page_type === PAGE_TAXONOMY.HOMEPAGE) ?? null;
+  const homepageLogoUrl =
+    homepageBaseline && homepageBaseline.structured_content
+      ? ((homepageBaseline.structured_content as any).brand?.logo_url as string | undefined) ?? null
+      : null;
+
+  const hasRecentChanges = recentChanges.length > 0;
+
+  const strengthSignals = narrativeStrengths.slice(0, 4);
+  const riskSignals = narrativeRisks.slice(0, 4);
+
+  // Derive most impactful signal from top strength or risk
+  const mostImpactfulSignal = (() => {
+    if (strengthSignals.length > 0 && riskSignals.length > 0) {
+      const strength = strengthSignals[0];
+      const risk = riskSignals[0];
+      // Create a concise synthesis
+      if (strength.toLowerCase().includes("credibility") && risk.toLowerCase().includes("conversion")) {
+        return "Enterprise credibility signals are strong, but conversion urgency appears weak.";
+      }
+      if (strength.toLowerCase().includes("positioning") && risk.toLowerCase().includes("monetization")) {
+        return "Positioning coherence is evident, but monetization clarity needs improvement.";
+      }
+      if (strength.toLowerCase().includes("operational") && risk.toLowerCase().includes("focus")) {
+        return "Operational depth is present, but market focus lacks clear articulation.";
+      }
+      return `${strength.replace(/^(Positioning appears|Public-facing positioning|Service structure|Offering breadth|Monetization signals|Market focus|Credibility surfaces|Change cadence|Recent activity)/, "").trim()}, but ${risk.toLowerCase().replace(/^(positioning signals|service structure|monetization posture|vertical focus|proof surfaces|low visible change)/, "").trim()}.`;
+    }
+    if (strengthSignals.length > 0) {
+      return strengthSignals[0];
+    }
+    if (riskSignals.length > 0) {
+      return riskSignals[0];
+    }
+    return null;
+  })();
+
+  // Quantify strategic movement
+  const pricingChanges = changesLast30d.filter((c) => c.category === "Pricing & Offers").length;
+  const messagingChanges = changesLast30d.filter((c) => c.category === "Positioning & Messaging").length;
+  const serviceChanges = changesLast30d.filter(
+    (c) => c.category === "Product / Services" || c.change_type === "element_added" || c.change_type === "element_removed"
+  ).length;
+  const ctaChanges = changesLast30d.filter((c) => c.change_type === "cta_text_change").length;
+
+  // Derive status for snapshot
+  const statusLabel =
+    changesLast30d.length === 0
+      ? "Stable"
+      : changesLast30d.length >= 5
+      ? "Active Shift"
+      : "Expansion Detected";
+
+  // Derive movement summary
+  const movementSummary =
+    changesLast30d.length === 0
+      ? "No pricing, service, or messaging shifts detected in latest cycle."
+      : pricingChanges > 0 || messagingChanges > 0 || serviceChanges > 0
+      ? `${pricingChanges > 0 ? `Pricing tier updated. ` : ""}${messagingChanges > 0 ? `Headline language modified. ` : ""}${serviceChanges > 0 ? `${serviceChanges} new service entries. ` : ""}`
+      : "Structural navigation adjustments only.";
+
+  // Derive dominant theme
+  const dominantTheme =
+    baselineProfile.value_proposition_summary ||
+    (serviceSnapshot?.primary_focus === "Strategic"
+      ? "Strategic transformation positioning with enterprise service depth."
+      : serviceSnapshot?.primary_focus === "Execution"
+      ? "Operational depth with execution-oriented delivery capabilities."
+      : serviceOverview.industries.length > 0
+      ? `Operational depth with vertical focus across ${serviceOverview.industries.slice(0, 2).join(" and ")}.`
+      : "Operational depth with enterprise service positioning.");
+
+  // Service intelligence interpretation
+  const portfolioBreadth =
+    serviceOverview.totalServices === 0
+      ? "Not Signaled"
+      : serviceOverview.totalServices <= 3
+      ? "Narrow"
+      : serviceOverview.totalServices <= 6
+      ? "Moderate"
+      : "Broad";
+
+  const verticalFocus =
+    serviceOverview.industries.length === 0
+      ? "Not Signaled"
+      : serviceOverview.industries.length === 1
+      ? "Clear"
+      : serviceOverview.industries.length <= 3
+      ? "Clear"
+      : "Diffuse";
+
+  const advisoryBias =
+    serviceSnapshot?.primary_focus === "Strategic"
+      ? "Advisory-heavy"
+      : serviceSnapshot?.primary_focus === "Execution"
+      ? "Operational-heavy"
+      : "Balanced";
+
+  // SEO trend detection (simple comparison)
+  const seoTopKeywords = seoIntelligence.dominantKeywords.slice(0, 5);
+  const seoEmergingKeywords = seoIntelligence.domainKeywordProfile
+    .filter((k) => k.page_count <= 2 && k.appearance_in_h1 > 0)
+    .slice(0, 5)
+    .map((k) => k.keyword);
+
+  // Competitive implication derivation
+  const competitiveImplications: string[] = [];
+  if (pricingChanges === 0 && changesLast30d.length === 0) {
+    competitiveImplications.push("Expect stable pricing competition");
+  }
+  if (messagingChanges === 0 && strengthSignals.some((s) => s.toLowerCase().includes("positioning"))) {
+    competitiveImplications.push("Differentiation opportunity in messaging clarity");
+  }
+  if (changesLast30d.length < 3) {
+    competitiveImplications.push("Low short-term repositioning risk");
+  }
+  if (snapshot.competitive_risk_level === "Low") {
+    competitiveImplications.push("Limited direct competitive pressure in current positioning");
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <InsightsRealtimeListener workspaceId={workspaceId} />
+      {/* Header */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Link href="/insights" className="hover:underline">
             Insights
           </Link>
           <span>/</span>
-          <span>{competitor.name || competitor.url}</span>
+          <span>{competitor.name || domainLabel}</span>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {competitor.name || competitor.url}
-        </h1>
+        <div className="flex items-center gap-3">
+          {homepageLogoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={homepageLogoUrl}
+              alt={`${domainLabel} logo`}
+              className="h-8 w-8 rounded border bg-muted object-contain"
+            />
+          )}
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {competitor.name || domainLabel}
+          </h1>
+          <InsightsLiveSignalIndicator competitorId={competitorId} />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          <span className="mr-4">Competitor: {domainLabel}</span>
+          <span className="mr-4">Last Analyzed: {lastAnalyzedLabel}</span>
+          <span>Monitoring Status: {competitiveState.status}</span>
+        </p>
       </div>
 
-      <CompanyBaselineSection
-        biographySummary={baselineProfile.biography_summary}
-        coreOfferings={baselineProfile.offering_profile.core_offerings}
-        offeringStructureSummary={baselineProfile.offering_structure_summary}
-        targetMarketSummary={baselineProfile.target_market_summary}
-        valuePropositionSummary={baselineProfile.value_proposition_summary}
-        trustProfileSummary={baselineProfile.trust_profile_summary}
-      />
+      {/* Section 1 — Strategic Snapshot */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Strategic Snapshot</h2>
+        <Card className="border-2">
+          <CardContent className="space-y-2 py-6 text-base">
+            <p>
+              <span className="font-semibold">Status:</span> {statusLabel}
+            </p>
+            <p>
+              <span className="font-semibold">Movement:</span> {movementSummary}
+            </p>
+            <p>
+              <span className="font-semibold">Risk Exposure:</span> {snapshot.competitive_risk_level === "Low" ? "Low" : snapshot.competitive_risk_level === "Moderate" ? "Moderate" : "Elevated"} competitive acceleration observed.
+            </p>
+            <p>
+              <span className="font-semibold">Dominant Theme:</span> {dominantTheme}
+            </p>
+          </CardContent>
+        </Card>
+      </section>
 
-      <CompetitiveSnapshotSection snapshot={snapshot} />
+      <hr className="border-border/60" />
 
-      <SearchPositioningSection seo={seoIntelligence} />
+      {/* Section 2 — Strategic Movement */}
+      <section id="insights-pricing" className="space-y-4">
+        <h2 className="text-base font-medium tracking-tight">Strategic Movement (Last 30 Days)</h2>
+        <Card>
+          <CardContent className="py-6 text-sm">
+            <div className="space-y-1 font-mono">
+              <p>Pricing changes: {pricingChanges}</p>
+              <p>Messaging shifts: {messagingChanges}</p>
+              <p>Service additions/removals: {serviceChanges}</p>
+              <p>CTA modifications: {ctaChanges}</p>
+            </div>
+            {changesLast30d.length > 0 && (
+              <div className="mt-4 space-y-1 text-sm text-muted-foreground">
+                {pricingChanges > 0 && <p>+{pricingChanges} pricing tier update{pricingChanges > 1 ? "s" : ""}</p>}
+                {messagingChanges > 0 && <p>Headline language modified</p>}
+                {serviceChanges > 0 && <p>+{serviceChanges} new service entr{serviceChanges > 1 ? "ies" : "y"}</p>}
+                {ctaChanges > 0 && <p>+{ctaChanges} CTA modification{ctaChanges > 1 ? "s" : ""}</p>}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
-      <CompetitiveStateSection
-        competitorName={competitor.name || competitor.url}
-        status={competitiveState.status}
-        trackingConfidence={competitiveState.trackingConfidence}
-        competitivePosture={competitiveState.competitivePosture}
-        summary={competitiveState.summary}
-      />
+      <hr className="border-border/60" />
 
-      <FocusSignalsSection
-        primaryFocusAreas={focusSignals.primaryFocusAreas}
-        secondarySignals={focusSignals.secondarySignals}
-        interpretation={focusSignals.interpretation}
-      />
+      {/* Section 3 — Competitive Strength & Risk */}
+      <section className="space-y-4">
+        <h2 className="text-base font-medium tracking-tight">Competitive Strength & Risk</h2>
+        <Card>
+          <CardContent className="space-y-4 py-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-sm font-medium">Strength Signals</p>
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {strengthSignals.length > 0 ? (
+                    strengthSignals.map((text) => <li key={text}>• {text}</li>)
+                  ) : (
+                    <li>• Strength signals will appear as more strategic surfaces are crawled.</li>
+                  )}
+                </ul>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Risk Signals</p>
+                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  {riskSignals.length > 0 ? (
+                    riskSignals.map((text) => <li key={text}>• {text}</li>)
+                  ) : (
+                    <li>• Risk signals will appear as more strategic surfaces are crawled.</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+            {mostImpactfulSignal && (
+              <div className="mt-4 border-t pt-4">
+                <p className="text-sm font-semibold">Most Impactful Signal:</p>
+                <p className="mt-1 text-sm text-muted-foreground">{mostImpactfulSignal}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
-      <KeySignalsSection signals={keySignals} />
+      <hr className="border-border/60" />
 
-      <WebpageDerivedSignalsSection
-        messaging={messagingSignals}
-        gtm={gtmSignals}
-        pricingNarrative={pricingNarrative}
-        capabilityFocus={capabilityFocus}
-      />
+      {/* Section 4 — Competitive Implication */}
+      <section className="space-y-4">
+        <h2 className="text-base font-medium tracking-tight">Competitive Implication</h2>
+        <Card>
+          <CardContent className="py-6 text-sm">
+            <p className="font-medium mb-2">If competing in this space:</p>
+            <ul className="space-y-1 text-muted-foreground">
+              {competitiveImplications.length > 0 ? (
+                competitiveImplications.map((impl, idx) => (
+                  <li key={idx}>• {impl}</li>
+                ))
+              ) : (
+                <li>• Monitor for emerging competitive signals as tracking coverage expands.</li>
+              )}
+            </ul>
+          </CardContent>
+        </Card>
+      </section>
 
-      <ServiceIntelligenceSection
-        overview={serviceOverview}
-        derivedSignals={
-          isServicePageBlocked
-            ? [
-                "Service/offerings page is protected by bot mitigation (Cloudflare). We can’t extract structured service data from automated crawls right now.",
-              ]
-            : serviceInsights
-        }
-        strategicConsiderations={
-          isServicePageBlocked
-            ? [
-                `If this competitor is high-priority, run a manual crawl from a real browser session or use an authenticated data source for Crunchbase.`,
-              ]
-            : serviceConsiderations
-        }
-        evidenceHeadings={serviceEvidenceHeadings}
-      />
+      <hr className="border-border/60" />
 
-      <StrengthsRisksSection
-        strengths={narrativeStrengths}
-        risks={narrativeRisks}
-        confidence={intelligence.confidence.level}
-      />
+      {/* Section 5 — Service Intelligence */}
+      <section id="insights-services" className="space-y-4">
+        <h2 className="text-base font-medium tracking-tight">Service Intelligence</h2>
+        <Card>
+          <CardContent className="space-y-4 py-6">
+            <div className="space-y-2 text-sm">
+              <p className="font-medium">Service Intelligence Summary</p>
+              <div className="space-y-1 text-muted-foreground">
+                <p>Portfolio Breadth: {portfolioBreadth}</p>
+                <p>Vertical Focus: {verticalFocus}</p>
+                <p>Advisory vs Operational Bias: {advisoryBias}</p>
+              </div>
+            </div>
+            <Collapsible defaultOpen={false}>
+              <CollapsibleTrigger className="text-sm font-medium underline-offset-4 hover:underline">
+                Raw Service Evidence
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3 space-y-3">
+                <div className="grid gap-4 text-sm text-muted-foreground md:grid-cols-2">
+                  <div>
+                    <p className="font-medium text-foreground">Service Structure</p>
+                    <ul className="mt-1 space-y-1">
+                      {baselineProfile.offering_profile.core_offerings.length > 0 ? (
+                        baselineProfile.offering_profile.core_offerings.map((offering) => (
+                          <li key={offering}>• {offering}</li>
+                        ))
+                      ) : (
+                        <li>• Service structure will clarify as more services pages are captured.</li>
+                      )}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Industry Coverage</p>
+                    <ul className="mt-1 space-y-1">
+                      {serviceOverview.industries.length > 0 ? (
+                        serviceOverview.industries.map((industry) => (
+                          <li key={industry}>• {industry}</li>
+                        ))
+                      ) : (
+                        <li>• Industry coverage lacks clear signals.</li>
+                      )}
+                    </ul>
+                    {serviceEvidenceHeadings.length > 0 && (
+                      <div className="mt-3">
+                        <p className="font-medium text-foreground">Service Page Headings</p>
+                        <ul className="mt-1 space-y-1">
+                          {serviceEvidenceHeadings.slice(0, 8).map((heading) => (
+                            <li key={heading}>• {heading}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </CardContent>
+        </Card>
+      </section>
 
-      <StrategicImplicationsSection implications={strategicNarrative} />
+      <hr className="border-border/60" />
 
-      <WhatToWatchSection items={watchNextItems} />
+      {/* Section 6 — SEO Intelligence (Collapsible) */}
+      <section id="insights-seo" className="space-y-3">
+        <Collapsible defaultOpen={false}>
+          <CollapsibleTrigger className="text-base font-medium">SEO Intelligence</CollapsibleTrigger>
+          <CollapsibleContent className="space-y-4 mt-4">
+            <Card>
+              <CardContent className="space-y-3 py-6 text-sm text-muted-foreground">
+                <div>
+                  <p className="font-medium text-foreground">Top 5 Core Terms</p>
+                  <ul className="mt-1 space-y-1">
+                    {seoTopKeywords.length > 0 ? (
+                      seoTopKeywords.map((keyword) => <li key={keyword}>• {keyword}</li>)
+                    ) : (
+                      <li>• Core terms will populate as SEO content is captured.</li>
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Emerging Terms</p>
+                  <ul className="mt-1 space-y-1">
+                    {seoEmergingKeywords.length > 0 ? (
+                      seoEmergingKeywords.map((keyword) => <li key={keyword}>• {keyword}</li>)
+                    ) : (
+                      <li>• Emerging terms will appear as content depth increases.</li>
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Funnel Coverage</p>
+                  <p className="mt-1">{seoIntelligence.snapshot.funnel_strategy}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      </section>
 
-      <div className="space-y-3">
-        <h2 className="text-base font-medium text-muted-foreground">Evidence (Recent Changes)</h2>
-        {recentChanges.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="pt-6 text-sm text-muted-foreground">
-              No changes detected in the last crawl. This suggests short-term strategic stability.
-            </CardContent>
-          </Card>
-        ) : (
-          <ul className="space-y-4">
-            {recentChanges.map((change) => {
-              const beforeUrl = pickScreenshotUrl(change.before_snapshot);
-              const afterUrl = pickScreenshotUrl(change.after_snapshot);
-              return (
-                <li key={change.id}>
-                  <Card className="border-dashed">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">{change.summary}</CardTitle>
-                      <p className="text-sm text-muted-foreground">
-                        Detected: {formatDate(change.created_at)}
-                      </p>
-                    </CardHeader>
-                    <CardContent className="text-sm">
-                      <Collapsible>
-                        <CollapsibleTrigger>View screenshots</CollapsibleTrigger>
-                        <CollapsibleContent className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <p className="text-xs text-muted-foreground">Before</p>
-                            {beforeUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={beforeUrl}
-                                alt="Before snapshot"
-                                className="w-full rounded border bg-muted/10 object-contain"
-                              />
-                            ) : (
-                              <div className="rounded border bg-muted/10 p-4 text-xs text-muted-foreground">
-                                No screenshot
-                              </div>
-                            )}
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-xs text-muted-foreground">After</p>
-                            {afterUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={afterUrl}
-                                alt="After snapshot"
-                                className="w-full rounded border bg-muted/10 object-contain"
-                              />
-                            ) : (
-                              <div className="rounded border bg-muted/10 p-4 text-xs text-muted-foreground">
-                                No screenshot
-                              </div>
-                            )}
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </CardContent>
-                  </Card>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+      <hr className="border-border/60" />
+
+      {/* Section 7 — Historical Timeline (Collapsible) */}
+      <section id="insights-positioning" className="space-y-3">
+        <Collapsible defaultOpen={false}>
+          <CollapsibleTrigger className="text-base font-medium">Historical Signal Timeline</CollapsibleTrigger>
+          <CollapsibleContent className="mt-4">
+            <Card>
+              <CardContent className="space-y-2 py-6 text-sm text-muted-foreground">
+                {changesLast30d.length === 0 ? (
+                  <p>No structural movement detected in the last 30 days.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {changesLast30d
+                      .slice()
+                      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                      .map((change) => (
+                        <li key={`${change.created_at}-${change.page_type}-${change.category}`}>
+                          {formatDate(change.created_at)} — {change.category ?? "Change"} on{" "}
+                          {change.page_type}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      </section>
+
+      <hr className="border-border/60" />
+
+      {/* Section 8 — Raw Structural Change Log (Collapsed by default) */}
+      <section className="space-y-3">
+        <Collapsible defaultOpen={false}>
+          <CollapsibleTrigger className="text-base font-medium">Raw Structural Change Log</CollapsibleTrigger>
+          <CollapsibleContent className="mt-4">
+            <Card>
+              <CardContent className="space-y-3 py-6 text-sm">
+                {recentChanges.length === 0 ? (
+                  <p className="text-muted-foreground">
+                    No structural changes detected in recent crawl.
+                  </p>
+                ) : (
+                  <ul className="space-y-4">
+                    {recentChanges.map((change) => {
+                      const beforeUrl = pickScreenshotUrl(change.before_snapshot);
+                      const afterUrl = pickScreenshotUrl(change.after_snapshot);
+                      return (
+                        <li key={change.id}>
+                          <Card className="border-dashed">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-sm font-medium">{change.summary}</CardTitle>
+                              <p className="text-xs text-muted-foreground">
+                                Detected: {formatDate(change.created_at)}
+                              </p>
+                            </CardHeader>
+                            <CardContent className="text-xs">
+                              <Collapsible>
+                                <CollapsibleTrigger>View screenshots</CollapsibleTrigger>
+                                <CollapsibleContent className="grid gap-4 pt-3 sm:grid-cols-2">
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] uppercase text-muted-foreground">Before</p>
+                                    {beforeUrl ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={beforeUrl}
+                                        alt="Before snapshot"
+                                        className="w-full rounded border bg-muted/10 object-contain"
+                                      />
+                                    ) : (
+                                      <div className="rounded border bg-muted/10 p-4 text-[10px] text-muted-foreground">
+                                        No screenshot
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] uppercase text-muted-foreground">After</p>
+                                    {afterUrl ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={afterUrl}
+                                        alt="After snapshot"
+                                        className="w-full rounded border bg-muted/10 object-contain"
+                                      />
+                                    ) : (
+                                      <div className="rounded border bg-muted/10 p-4 text-[10px] text-muted-foreground">
+                                        No screenshot
+                                      </div>
+                                    )}
+                                  </div>
+                                </CollapsibleContent>
+                              </Collapsible>
+                            </CardContent>
+                          </Card>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      </section>
     </div>
   );
 }

@@ -29,6 +29,7 @@ export type CompetitorRow = {
   id: string;
   name: string | null;
   url: string;
+  logo_url?: string | null;
   last_crawled_at: string | null;
   crawl_frequency: CrawlFrequency;
   created_at: string;
@@ -200,12 +201,22 @@ export function CompetitorsTable({
               return (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">
-                    <Link
-                      href={`/dashboard/competitors/${c.id}`}
-                      className="hover:underline"
-                    >
-                      {c.name || c.url}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      {c.logo_url && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={c.logo_url}
+                          alt={`${c.name || c.url} logo`}
+                          className="h-6 w-6 rounded border bg-muted object-contain"
+                        />
+                      )}
+                      <Link
+                        href={`/dashboard/competitors/${c.id}`}
+                        className="hover:underline"
+                      >
+                        {c.name || c.url}
+                      </Link>
+                    </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     <a

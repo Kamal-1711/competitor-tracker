@@ -414,6 +414,7 @@ export function deriveServiceInsights(snapshot: ServiceSnapshot | null): string[
   }
 
   const insights: string[] = [];
+  const industries = Array.isArray(snapshot.industries) ? snapshot.industries : [];
 
   // Rule 1: Strategic-heavy language
   if (snapshot.strategic_keywords_count >= snapshot.execution_keywords_count + 2) {
@@ -440,9 +441,9 @@ export function deriveServiceInsights(snapshot: ServiceSnapshot | null): string[
     insights.push("Broad multi-service capability footprint is presented.");
   }
 
-  if (snapshot.industries.length >= 2) {
+  if (industries.length >= 2) {
     insights.push(
-      `Vertical focus is visible across ${snapshot.industries.slice(0, 3).join(", ")}.`
+      `Vertical focus is visible across ${industries.slice(0, 3).join(", ")}.`
     );
   }
 
@@ -462,6 +463,7 @@ export function deriveStrategicConsiderations(snapshot: ServiceSnapshot | null):
   }
 
   const statements: string[] = [];
+  const industries = Array.isArray(snapshot.industries) ? snapshot.industries : [];
 
   if (snapshot.primary_focus === "Strategic") {
     statements.push("Consider how strategic-led messaging may influence executive-level buying conversations.");
@@ -473,9 +475,9 @@ export function deriveStrategicConsiderations(snapshot: ServiceSnapshot | null):
     statements.push("Consider the current balanced positioning as an attempt to cover both advisory and delivery demand.");
   }
 
-  if (snapshot.industries.length > 0) {
+  if (industries.length > 0) {
     statements.push(
-      `Monitor vertical signal expansion beyond ${snapshot.industries.slice(0, 2).join(" and ")}.`
+      `Monitor vertical signal expansion beyond ${industries.slice(0, 2).join(" and ")}.`
     );
   }
 

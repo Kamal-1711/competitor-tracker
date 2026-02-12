@@ -85,18 +85,25 @@ function describeFunnel(funnel: FunnelDistribution): string {
 
 function describeContentIntensity(content: ContentDepthMetrics): string {
   if (content.total_blog_pages === 0) {
-    return "Limited visible content investment captured so far.";
+    return "Content investment is not yet clearly visible from captured SEO surfaces.";
   }
 
-  const levelLabel = level(content.content_investment_score);
-  const avgWords =
-    content.avg_word_count > 0 ? `${content.avg_word_count.toLocaleString()} words` : "n/a";
-  const freq =
-    content.publishing_frequency_per_month > 0
-      ? `${content.publishing_frequency_per_month}/month`
-      : "low / irregular cadence";
+  const investmentLevel = level(content.content_investment_score);
+  const hasMeaningfulDepth = content.avg_word_count >= 800;
+  const hasRegularCadence = content.publishing_frequency_per_month >= 2;
 
-  return `Blog Pages: ${content.total_blog_pages} · Avg Depth: ${avgWords} · Publishing Frequency: ${freq} (${levelLabel} investment).`;
+  if (investmentLevel === "High") {
+    if (hasRegularCadence && hasMeaningfulDepth) {
+      return "Content program appears well-established with regular publishing and meaningful depth across key topics.";
+    }
+    return "Content program appears material, with visible depth and a growing library of SEO-relevant pages.";
+  }
+
+  if (investmentLevel === "Moderate") {
+    return "Content investment appears selective, with a focused but not exhaustive library of SEO content.";
+  }
+
+  return "Early-stage content program with limited but emerging SEO surfaces visible so far.";
 }
 
 function buildEnterpriseSignal(dimensions: SEODimensions): string {

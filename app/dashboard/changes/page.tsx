@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { ChangeFeedFilters } from "./change-feed-filters";
 import { CrawlButton } from "./crawl-button";
-import { InsightFeedList, type InsightFeedItem } from "./insight-feed-list";
+import { type StrategicSignalItem } from "./strategic-signal-stream-list";
+import { ChangeFeedRealtime } from "./change-feed-realtime";
+import { WeeklyStrategicSummary, type MovementSignal } from "./weekly-strategic-summary";
 
 export type ChangeCategory =
   | "Positioning & Messaging"
@@ -14,44 +16,30 @@ export type ChangeCategory =
   | "Trust & Credibility"
   | "Navigation / Structure";
 
-export interface ChangeFeedItem {
+interface ChangeRow {
   id: string;
+  competitor_id: string;
+  page_type: string;
   created_at: string;
   page_url: string;
-  page_type: string;
   change_type: string;
-  category: ChangeCategory | null;
+  category: ChangeCategory;
   summary: string;
-  details: Record<string, unknown>;
-  competitor_id: string;
+  impact_level: "Minor" | "Moderate" | "Strategic" | null;
+  strategic_interpretation: string | null;
+  suggested_monitoring_action: string | null;
   competitors: { name: string | null; url: string } | { name: string | null; url: string }[] | null;
   before_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
   after_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
 }
 
-interface InsightRow {
-  id: string;
-  competitor_id: string;
-  page_type: string;
-  insight_text: string;
-  related_change_ids: string[];
-  created_at: string;
-  competitors: { name: string | null; url: string } | { name: string | null; url: string }[] | null;
-}
-
-interface RelatedChangeRow {
-  id: string;
-  before_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
-  after_snapshot: { screenshot_url: string | null } | { screenshot_url: string | null }[] | null;
-}
-
-function pickCompetitor(row: InsightRow): { name: string | null; url: string } | null {
+function pickCompetitor(row: ChangeRow): { name: string | null; url: string } | null {
   if (!row.competitors) return null;
   return Array.isArray(row.competitors) ? row.competitors[0] ?? null : row.competitors;
 }
 
 function pickScreenshotUrl(
-  snapshot: RelatedChangeRow["before_snapshot"] | RelatedChangeRow["after_snapshot"]
+  snapshot: ChangeRow["before_snapshot"] | ChangeRow["after_snapshot"]
 ): string | null {
   if (!snapshot) return null;
   const record = Array.isArray(snapshot) ? snapshot[0] : snapshot;
@@ -79,7 +67,7 @@ export default async function ChangesPage({
 
   const params = await searchParams;
   const competitorId = typeof params.competitor === "string" ? params.competitor : undefined;
-  const category = typeof params.category === "string" ? params.category : undefined;
+  const focus = typeof params.focus === "string" ? params.focus : undefined;
   const fromDate = typeof params.from === "string" ? params.from : undefined;
   const toDate = typeof params.to === "string" ? params.to : undefined;
   const pageParam = typeof params.page === "string" ? params.page : "1";
@@ -107,68 +95,114 @@ export default async function ChangesPage({
     );
   }
 
-  let baseQuery = supabase
-    .from("insights")
+  let changesQuery = supabase
+    .from("changes")
     .select(
       `
       id,
-      created_at,
-      page_type,
-      insight_text,
-      related_change_ids,
       competitor_id,
-      competitors(name, url)
+      page_type,
+      page_url,
+      change_type,
+      category,
+      summary,
+      impact_level,
+      strategic_interpretation,
+      suggested_monitoring_action,
+      created_at,
+      competitors(name, url),
+      before_snapshot:snapshots!before_snapshot_id(screenshot_url),
+      after_snapshot:snapshots!after_snapshot_id(screenshot_url)
     `,
       { count: "exact" }
     )
     .in("competitor_id", competitorIds)
     .order("created_at", { ascending: false });
 
-  if (competitorId) baseQuery = baseQuery.eq("competitor_id", competitorId);
-  if (category) baseQuery = baseQuery.eq("page_type", category);
-  if (fromDate) baseQuery = baseQuery.gte("created_at", `${fromDate}T00:00:00.000Z`);
-  if (toDate) baseQuery = baseQuery.lte("created_at", `${toDate}T23:59:59.999Z`);
+  if (competitorId) changesQuery = changesQuery.eq("competitor_id", competitorId);
+  if (fromDate) changesQuery = changesQuery.gte("created_at", `${fromDate}T00:00:00.000Z`);
+  if (toDate) changesQuery = changesQuery.lte("created_at", `${toDate}T23:59:59.999Z`);
 
-  const { data: insightsRows = [], count: totalCount } = await baseQuery.range(offset, offset + PAGE_SIZE - 1);
-  const insightRows = (insightsRows ?? []) as InsightRow[];
-
-  const relatedChangeIds = Array.from(
-    new Set(insightRows.flatMap((insight) => insight.related_change_ids ?? []))
-  );
-
-  const relatedChangesMap = new Map<string, RelatedChangeRow>();
-  if (relatedChangeIds.length > 0) {
-    const { data: relatedChanges } = await supabase
-      .from("changes")
-      .select(
-        `
-        id,
-        before_snapshot:snapshots!before_snapshot_id(screenshot_url),
-        after_snapshot:snapshots!after_snapshot_id(screenshot_url)
-      `
-      )
-      .in("id", relatedChangeIds);
-
-    for (const row of (relatedChanges ?? []) as RelatedChangeRow[]) {
-      relatedChangesMap.set(row.id, row);
-    }
+  // Map focus filters to change categories / page types.
+  if (focus === "messaging") {
+    changesQuery = changesQuery.eq("category", "Positioning & Messaging");
+  } else if (focus === "pricing") {
+    changesQuery = changesQuery.eq("category", "Pricing & Offers");
+  } else if (focus === "services") {
+    changesQuery = changesQuery.eq("category", "Product / Services");
+  } else if (focus === "seo") {
+    // Approximate SEO/content by use-case/industry pages.
+    changesQuery = changesQuery.eq("page_type", "use_cases_or_industries");
+  } else if (focus === "structural") {
+    changesQuery = changesQuery.in("category", ["Navigation / Structure", "Trust & Credibility"]);
   }
 
-  const insights: InsightFeedItem[] = insightRows.map((insight) => {
-    const competitor = pickCompetitor(insight);
+  const { data: changeRows = [], count: totalCount } = await changesQuery.range(
+    offset,
+    offset + PAGE_SIZE - 1
+  );
+  const changes = (changeRows ?? []) as ChangeRow[];
+
+  // Weekly summary over last 7 days for current filters (except pagination).
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoIso = sevenDaysAgo.toISOString();
+
+  let weeklyQuery = supabase
+    .from("changes")
+    .select("id, category, created_at", { count: "exact" })
+    .in("competitor_id", competitorIds)
+    .gte("created_at", sevenDaysAgoIso);
+
+  if (competitorId) weeklyQuery = weeklyQuery.eq("competitor_id", competitorId);
+  if (focus === "messaging") {
+    weeklyQuery = weeklyQuery.eq("category", "Positioning & Messaging");
+  } else if (focus === "pricing") {
+    weeklyQuery = weeklyQuery.eq("category", "Pricing & Offers");
+  } else if (focus === "services") {
+    weeklyQuery = weeklyQuery.eq("category", "Product / Services");
+  } else if (focus === "seo") {
+    weeklyQuery = weeklyQuery.eq("page_type", "use_cases_or_industries");
+  } else if (focus === "structural") {
+    weeklyQuery = weeklyQuery.in("category", ["Navigation / Structure", "Trust & Credibility"]);
+  }
+
+  const { data: weeklyRows = [], count: weeklyCount } = await weeklyQuery;
+  const weeklyTotal = weeklyCount ?? (weeklyRows?.length ?? 0);
+  const categoryCounts: Record<string, number> = {};
+  for (const row of weeklyRows ?? []) {
+    const key = (row as { category?: string }).category ?? "Unclassified";
+    categoryCounts[key] = (categoryCounts[key] ?? 0) + 1;
+  }
+
+  let movementSignal: MovementSignal = "Stable";
+  if (weeklyTotal >= 10) movementSignal = "Active";
+  else if (weeklyTotal >= 3) movementSignal = "Moderate";
+
+  const signals: StrategicSignalItem[] = changes.map((change) => {
+    const competitor = pickCompetitor(change);
     const competitorName = competitor?.name ?? competitor?.url ?? "Unknown competitor";
-    const firstRelatedChangeId = insight.related_change_ids?.[0] ?? null;
-    const relatedChange = firstRelatedChangeId ? relatedChangesMap.get(firstRelatedChangeId) : undefined;
+    const dateLabel = new Date(change.created_at).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
 
     return {
-      id: insight.id,
+      id: change.id,
+      createdAt: change.created_at,
+      dateLabel,
       competitorName,
-      competitorUrl: competitor?.url ?? null,
-      pageType: insight.page_type,
-      insightText: insight.insight_text,
-      createdAt: insight.created_at,
-      beforeScreenshotUrl: relatedChange ? pickScreenshotUrl(relatedChange.before_snapshot) : null,
-      afterScreenshotUrl: relatedChange ? pickScreenshotUrl(relatedChange.after_snapshot) : null,
+      pageUrl: change.page_url,
+      pageType: change.page_type,
+      category: change.category ?? "Navigation / Structure",
+      changeType: change.change_type,
+      summary: change.summary,
+      impactLevel: (change.impact_level as StrategicSignalItem["impactLevel"]) ?? null,
+      strategicInterpretation: change.strategic_interpretation,
+      suggestedMonitoringAction: change.suggested_monitoring_action,
+      beforeScreenshotUrl: pickScreenshotUrl(change.before_snapshot),
+      afterScreenshotUrl: pickScreenshotUrl(change.after_snapshot),
     };
   });
 
@@ -185,19 +219,25 @@ export default async function ChangesPage({
       <ChangeFeedFilters
         competitors={competitors}
         currentCompetitorId={competitorId}
-        currentCategory={category}
+        currentFocus={focus}
         currentFrom={fromDate}
         currentTo={toDate}
       />
-      <InsightFeedList
-        insights={insights}
+      <WeeklyStrategicSummary
+        totalChanges={weeklyTotal}
+        categoryCounts={categoryCounts}
+        movementSignal={movementSignal}
+      />
+      <ChangeFeedRealtime
+        workspaceId={workspaceId}
+        initialItems={signals}
         page={page}
         totalPages={totalPages}
         totalCount={totalCount ?? 0}
         pageSize={PAGE_SIZE}
         hasPrevPage={hasPrevPage}
         hasNextPage={hasNextPage}
-        hasActiveFilters={!!(competitorId || category || fromDate || toDate)}
+        hasActiveFilters={!!(competitorId || focus || fromDate || toDate)}
       />
     </div>
   );

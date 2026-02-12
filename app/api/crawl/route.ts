@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { crawlCompetitor } from "@/crawler/crawlCompetitor";
+import { initializeSocketServer } from "@/lib/realtime/socketServer";
 
 export const maxDuration = 300; // 5 minutes max for crawl
 export const dynamic = "force-dynamic";
@@ -12,6 +13,12 @@ interface CrawlRequestBody {
 
 export async function POST(request: NextRequest) {
   try {
+    try {
+      initializeSocketServer();
+    } catch (error) {
+      console.error("[api/crawl] Socket server init failed", error);
+    }
+
     const body: CrawlRequestBody = await request.json();
 
     if (!body.jobId || !body.competitorId || !body.competitorUrl) {

@@ -9,7 +9,11 @@
     "lint": "next lint",
     "playwright:install": "playwright install",
     "playwright:test": "playwright test",
+    "playwright:ui": "playwright test --config=playwright-ui.config.ts",
     "playwright:report": "playwright show-report",
+    "test:integration": "vitest run tests/integration",
+    "test:ui": "playwright test --config=playwright-ui.config.ts",
+    "test": "npm run test:integration && npm run test:ui",
     "crawl-worker": "npx tsx scripts/run-crawl-worker.ts"
   },
   "dependencies": {
@@ -27,6 +31,8 @@
     "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7"
   },
@@ -41,6 +47,7 @@
     "playwright": "^1.58.2",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
   }
 }

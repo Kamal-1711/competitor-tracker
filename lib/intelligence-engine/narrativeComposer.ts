@@ -143,7 +143,7 @@ export function composeNarrative(params: {
 
   const imbalanceLines: NarrativeLine[] = params.ranked.imbalances.map((i) => {
     const templates = IMBALANCE_TEMPLATES[i.id] ?? [
-      "An imbalance pattern was detected based on the current trait/score combination.",
+      "An imbalance pattern was detected based on the current strategic signal mix.",
     ];
     const idx = stableIndex(`${params.competitorId}:${i.id}`, templates.length);
     return {
@@ -165,7 +165,7 @@ export function composeNarrative(params: {
     {
       id: "implication_top",
       kind: "implication",
-      text: `Primary strength signal concentrates in ${dimensionLabel(top.dim)} (score ${top.score}).`,
+      text: `Primary strength signal concentrates in ${dimensionLabel(top.dim)}.`,
       templateId: "NC-IMP-001",
       ruleId: "NC-IMP-001",
       evidence: [{ dimension: top.dim, value: top.score }],
@@ -173,7 +173,7 @@ export function composeNarrative(params: {
     {
       id: "implication_bottom",
       kind: "implication",
-      text: `Primary risk signal concentrates in ${dimensionLabel(bottom.dim)} (score ${bottom.score}).`,
+      text: `Primary risk signal concentrates in ${dimensionLabel(bottom.dim)}.`,
       templateId: "NC-IMP-002",
       ruleId: "NC-IMP-002",
       evidence: [{ dimension: bottom.dim, value: bottom.score }],

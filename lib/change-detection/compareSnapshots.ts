@@ -8,6 +8,7 @@ import {
 } from "./detectPmSignalChanges";
 import { generateInsights } from "@/lib/insights/generateInsights";
 import { persistInsights } from "@/lib/insights/persistInsights";
+import { emitHighImpactChange } from "@/lib/realtime/socketEvents";
 
 export interface CompareSnapshotsInput {
   competitorId: string;
@@ -100,6 +101,14 @@ export async function compareSnapshots(input: CompareSnapshotsInput): Promise<Co
         changes: diffs,
       });
       persistedChangeIds = persisted.changeIds;
+      try {
+        await emitHighImpactChange({
+          competitorId: input.competitorId,
+          detectedChanges: diffs,
+        });
+      } catch (error) {
+        console.error("Socket emit failed", error);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       changeDetectionError({

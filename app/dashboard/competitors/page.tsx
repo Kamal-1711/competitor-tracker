@@ -20,11 +20,46 @@ export default async function CompetitorsPage() {
 
   const supabase = await createClient();
 
-  const { data: competitorsData } = await supabase
+  // First attempt: select logo_url as well (for logo display in the table).
+  // If the column is missing (e.g. migration not yet applied in some env),
+  // fall back to a schema-compatible select so we never silently return "no competitors".
+  const {
+    data: competitorsWithLogo,
+    error: competitorsWithLogoError,
+  } = await supabase
     .from("competitors")
-    .select("id, name, url, last_crawled_at, crawl_frequency, created_at, updated_at")
+    .select("id, name, url, logo_url, last_crawled_at, crawl_frequency, created_at, updated_at")
     .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false });
+
+  let competitorsData = competitorsWithLogo ?? [];
+
+  if (competitorsWithLogoError) {
+    const message = String(competitorsWithLogoError.message || competitorsWithLogoError);
+    const isMissingLogoColumn =
+      message.includes("logo_url") &&
+      (message.toLowerCase().includes("does not exist") ||
+        message.includes("Could not find the 'logo_url' column"));
+
+    if (isMissingLogoColumn) {
+      // Fallback: query without logo_url so the page still works and competitors are visible.
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("competitors")
+        .select("id, name, url, last_crawled_at, crawl_frequency, created_at, updated_at")
+        .eq("workspace_id", workspaceId)
+        .order("created_at", { ascending: false });
+
+      if (fallbackError) {
+        console.error("Failed to load competitors (fallback without logo_url):", fallbackError);
+        throw new Error("Unable to load competitors. Please try again.");
+      }
+
+      competitorsData = fallbackData ?? [];
+    } else {
+      console.error("Failed to load competitors:", competitorsWithLogoError);
+      throw new Error("Unable to load competitors. Please try again.");
+    }
+  }
 
   const competitors = competitorsData ?? [];
 

@@ -7,6 +7,8 @@ import { crawlFailure, snapshotFailure } from "@/lib/log/crawl";
 import { persistObservationalInsights } from "@/lib/insights/persistObservationalInsights";
 import { persistWebpageSignalInsights } from "@/lib/insights/persistWebpageSignalInsights";
 import { buildSeoIntelligence } from "@/lib/intelligence-engine/searchIntelligence/seoSnapshotComposer";
+import { persistPricingIntelligence } from "@/lib/pricing-intelligence/pricingIntelligence";
+import { emitCrawlCompleted } from "@/lib/realtime/socketEvents";
 import type { SEOPageData } from "@/lib/intelligence-engine/searchIntelligence/contentCrawler";
 import {
   PAGE_TAXONOMY,
@@ -491,6 +493,54 @@ function extractImageAltText(html: string): string[] {
     if (!deduped.has(key)) deduped.set(key, text);
   }
   return Array.from(deduped.values()).slice(0, 120);
+}
+
+function extractPrimaryLogoUrl(html: string, pageUrl: string): string | null {
+  const $ = cheerio.load(html);
+  type Candidate = { src: string; score: number };
+  const candidates: Candidate[] = [];
+
+  $("img[src]").each((_, el) => {
+    const srcRaw = ($(el).attr("src") ?? "").trim();
+    if (!srcRaw) return;
+
+    const alt = ($(el).attr("alt") ?? "").toLowerCase();
+    const classAttr = ($(el).attr("class") ?? "").toLowerCase();
+    const idAttr = ($(el).attr("id") ?? "").toLowerCase();
+    const parentTag = $(el).parent().prop("tagName")?.toLowerCase() ?? "";
+
+    let score = 0;
+    if (alt.includes("logo")) score += 4;
+    if (classAttr.includes("logo") || idAttr.includes("logo")) score += 4;
+    if (parentTag === "header" || parentTag === "nav") score += 3;
+
+    const widthAttr = $(el).attr("width");
+    const heightAttr = $(el).attr("height");
+    if (widthAttr && heightAttr) {
+      const w = parseInt(widthAttr, 10);
+      const h = parseInt(heightAttr, 10);
+      if (Number.isFinite(w) && Number.isFinite(h) && w <= 256 && h <= 256) {
+        score += 1;
+      }
+    }
+
+    if (score <= 0) return;
+    candidates.push({ src: srcRaw, score });
+  });
+
+  candidates.sort((a, b) => b.score - a.score);
+
+  for (const candidate of candidates) {
+    try {
+      const absolute = new URL(candidate.src, pageUrl).toString();
+      if (!sameOrigin(absolute, pageUrl)) continue;
+      return absolute;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 function computeWordCount(html: string): number {
@@ -1264,6 +1314,7 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
 
   const supabase = createSupabaseAdminClient();
   let crawlJobId = "";
+  let homepageLogoUrlForRun: string | null = null;
 
   try {
     if (options.existingCrawlJobId) {
@@ -1312,11 +1363,27 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
         const listItems = extractListItems(page.html);
         const serviceSnapshot =
           page.pageType === PAGE_TAXONOMY.SERVICES ? analyzeServiceContent(page.html) : null;
-        const structuredContent: Record<string, unknown> | null = page.seo
+        const logoUrl =
+          page.pageType === PAGE_TAXONOMY.HOMEPAGE ? extractPrimaryLogoUrl(page.html, page.url) : null;
+        let structuredContent: Record<string, unknown> | null = page.seo
           ? serviceSnapshot
             ? { ...serviceSnapshot, search_seo: page.seo }
             : { search_seo: page.seo }
           : serviceSnapshot;
+
+        if (logoUrl) {
+          if (!homepageLogoUrlForRun) {
+            homepageLogoUrlForRun = logoUrl;
+          }
+          const existingBrand =
+            structuredContent && typeof (structuredContent as any).brand === "object"
+              ? (structuredContent as any).brand
+              : {};
+          structuredContent = {
+            ...(structuredContent ?? {}),
+            brand: { ...existingBrand, logo_url: logoUrl },
+          };
+        }
         const navLabels = extractNavLabels(page.html, page.url);
         const topCtas =
           page.pageType === PAGE_TAXONOMY.HOMEPAGE ? extractTopCtas(page.html, page.url, 2) : [];
@@ -1351,6 +1418,19 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
           htmlHash: computeHtmlHash(page.html),
           capturedAt: new Date().toISOString(),
         });
+
+        if (page.pageType === PAGE_TAXONOMY.PRICING) {
+          await persistPricingIntelligence({
+            supabase,
+            competitorId,
+            capturedAt: new Date().toISOString(),
+            html: page.html,
+            pageUrl: page.url,
+          }).catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            errors.push(`Pricing intelligence save failed for ${page.url}: ${msg}`);
+          });
+        }
 
         // Previous snapshot query with backward-compatible fallback for older schemas.
         let previousSnapshot: any = null;
@@ -1481,13 +1561,24 @@ export async function crawlCompetitor(options: CrawlCompetitorOptions): Promise<
         errors.push(`Webpage signal insight save failed: ${msg}`);
       });
 
-      await supabase
-        .from("competitors")
-        .update({ last_crawled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq("id", competitorId);
+      const competitorUpdate: Record<string, unknown> = {
+        last_crawled_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      if (homepageLogoUrlForRun) {
+        competitorUpdate.logo_url = homepageLogoUrlForRun;
+      }
+      await supabase.from("competitors").update(competitorUpdate).eq("id", competitorId);
     }
 
     await finalizeCrawlJob(supabase, crawlJobId, ok ? "completed" : "failed", ok ? undefined : errors[0] ?? "No pages crawled");
+    if (ok) {
+      try {
+        await emitCrawlCompleted({ competitorId });
+      } catch (error) {
+        console.error("Socket emit failed", error);
+      }
+    }
     const endedAt = new Date().toISOString();
 
     return {

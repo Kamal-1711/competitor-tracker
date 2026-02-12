@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { crawlCompetitor } from "../crawler/crawlCompetitor";
 import fs from "node:fs";
 import path from "node:path";
+import { initializeSocketServer } from "../lib/realtime/socketServer";
 
 function loadDotEnvLocal(): void {
   // Lightweight `.env.local` loader for local runs (no dependency).
@@ -49,6 +50,11 @@ function getEnv(name: string): string {
 
 async function main() {
   loadDotEnvLocal();
+  try {
+    initializeSocketServer();
+  } catch (error) {
+    console.error("Socket server init failed", error);
+  }
 
   const supabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   // Prefer service role key; fall back to anon key (works when RLS is disabled)
