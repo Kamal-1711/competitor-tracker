@@ -265,7 +265,7 @@ export default async function InsightDetailPage({
                                 <div className="bg-emerald-50 dark:bg-emerald-500/5 p-3 rounded border border-emerald-100 dark:border-emerald-500/10">
                                     <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">AI Pricing Strategy Analysis</h4>
                                     <p className="text-sm text-emerald-900 dark:text-emerald-100 italic">
-                                        "{data.pricingIntelligence.aiAnalysis}"
+                                        &quot;{data.pricingIntelligence.aiAnalysis}&quot;
                                     </p>
                                 </div>
                             </div>
@@ -318,7 +318,7 @@ export default async function InsightDetailPage({
                             </div>
                             <div className="p-3 bg-muted rounded-lg border-l-2 border-indigo-500">
                                 <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Recommended Counter-Move</h4>
-                                <p className="text-sm italic text-muted-foreground">"{data.blogIntelligence.suggestedCounterMove}"</p>
+                                <p className="text-sm italic text-muted-foreground">&quot;{data.blogIntelligence.suggestedCounterMove}&quot;</p>
                             </div>
                         </div>
                     </CardContent>

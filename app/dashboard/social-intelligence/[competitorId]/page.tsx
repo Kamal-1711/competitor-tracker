@@ -120,7 +120,7 @@ export default async function CompetitorSocialDetailPage({
                         <div className="pt-4 border-t border-border/40">
                             <p className="text-xs italic text-muted-foreground leading-relaxed">
                                 <span className="font-bold text-foreground not-italic mr-1">AI Verdict:</span>
-                                "{impact.narrativeShift.interpretation}"
+                                &quot;{impact.narrativeShift.interpretation}&quot;
                             </p>
                         </div>
                     </CardContent>
@@ -135,7 +135,7 @@ export default async function CompetitorSocialDetailPage({
                     </CardHeader>
                     <CardContent className="flex-1 space-y-4">
                         <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-900 dark:text-emerald-100 italic text-sm font-medium">
-                            "{impact.strategicForecast.forecast}"
+                            &quot;{impact.strategicForecast.forecast}&quot;
                         </div>
                         <div className="space-y-2">
                             <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Watch List (Impending Events)</p>
@@ -230,7 +230,7 @@ export default async function CompetitorSocialDetailPage({
                                     </div>
                                     {post.date}
                                 </div>
-                                <p className="text-sm font-medium leading-relaxed mb-4">"{post.text}"</p>
+                                <p className="text-sm font-medium leading-relaxed mb-4">&quot;{post.text}&quot;</p>
                                 <div className="flex items-center gap-4 text-[10px] font-bold">
                                     <span className="text-emerald-600">Engagement: {post.engagement}</span>
                                     <span className="text-primary hover:underline cursor-pointer">View Original Source →</span>

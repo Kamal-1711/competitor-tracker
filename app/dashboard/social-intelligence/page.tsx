@@ -66,7 +66,7 @@ export default async function SocialIntelligencePage() {
                     <CardContent>
                         <p className="text-lg leading-relaxed font-medium">
                             Overall market momentum is <span className="text-purple-600">Rising (+12%)</span>.
-                            The dominant narrative has shifted from "Integration Efficiency" to "Autonomous Operations" across 4/6 tracked competitors.
+                            The dominant narrative has shifted from &quot;Integration Efficiency&quot; to &quot;Autonomous Operations&quot; across 4/6 tracked competitors.
                         </p>
                         <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
                             <div className="flex items-center gap-1">

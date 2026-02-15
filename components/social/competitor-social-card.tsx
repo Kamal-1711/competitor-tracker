@@ -40,7 +40,7 @@ export function CompetitorSocialCard({ name, competitorId, impact }: CompetitorS
             </CardHeader>
             <CardContent className="space-y-4">
                 <p className="text-sm text-muted-foreground line-clamp-2 italic">
-                    "{impact.marketSummary}"
+                    &quot;{impact.marketSummary}&quot;
                 </p>
 
                 <div className="flex items-center gap-3 pt-2">

@@ -163,7 +163,7 @@ export default async function PricingPage({
                         <div className="space-y-1">
                             <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">AI Summary</h4>
                             <p className="text-base text-foreground/90 leading-relaxed italic">
-                                "{data.executiveVerdict.aiSummary}"
+                                &quot;{data.executiveVerdict.aiSummary}&quot;
                             </p>
                         </div>
                         <div className="grid grid-cols-2 gap-4 text-sm mt-4">
@@ -247,7 +247,7 @@ export default async function PricingPage({
                                 ))}
                             </ul>
                             <div className="border-t pt-3">
-                                <p className="text-sm italic text-muted-foreground">"{data.monetizationSignals.aiInterpretation}"</p>
+                                <p className="text-sm italic text-muted-foreground">&quot;{data.monetizationSignals.aiInterpretation}&quot;</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -347,7 +347,7 @@ export default async function PricingPage({
                         </div>
                         <div className="md:w-1/3 p-4 bg-background border rounded-lg shadow-sm">
                             <p className="text-sm font-medium text-center">
-                                "{data.competitivePositioning.aiConclusion}"
+                                &quot;{data.competitivePositioning.aiConclusion}&quot;
                             </p>
                         </div>
                     </CardContent>
