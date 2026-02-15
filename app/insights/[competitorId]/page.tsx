@@ -6,6 +6,7 @@ import { getOrCreateWorkspaceId } from "@/app/dashboard/competitors/actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import CompanyProfileCard from "@/components/insights/company-profile-card";
 import {
     Collapsible,
     CollapsibleContent,
@@ -21,7 +22,10 @@ import {
     ArrowRight,
     ShieldCheck,
     Activity,
-    ChevronDown
+    ChevronDown,
+    DollarSign,
+    FileText,
+    Terminal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getMockIntelligence } from "./mock-data";
@@ -62,46 +66,17 @@ export default async function InsightDetailPage({
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto pb-12">
-            {/* 1️⃣ PAGE HEADER */}
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b pb-6">
-                <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Link href="/insights" className="hover:text-primary transition-colors">Insights</Link>
-                        <span>/</span>
-                        <span className="font-medium text-foreground">{data.companyName}</span>
-                    </div>
-                    <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                        {data.companyName}
-                        <Badge variant="outline" className="ml-2 font-normal bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
-                            {data.monitoringStatus}
-                        </Badge>
-                    </h1>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1.5">
-                            <Activity className="h-4 w-4" />
-                            Last Analyzed: {data.lastAnalyzed}
-                        </span>
-                        <span className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-medium">
-                            <Brain className="h-4 w-4" />
-                            AI Confidence: {data.aiConfidenceScore}%
-                        </span>
-                    </div>
-                </div>
-                <div>
-                    <Badge variant="outline" className="px-3 py-1.5 text-sm font-medium border-purple-200 bg-purple-50 text-purple-700 dark:bg-purple-900/10 dark:text-purple-300 dark:border-purple-800 flex items-center gap-2">
-                        <Sparkles className="h-4 w-4" />
-                        AI Strategic Engine Active
-                    </Badge>
-                </div>
-            </div>
 
-            {/* 2️⃣ EXECUTIVE VERDICT (TOP PRIORITY CARD) */}
+            {/* 1️⃣ COMPANY PROFILE */}
+            <CompanyProfileCard company={data.companyProfile} />
+
+            {/* 2️⃣ STRATEGIC SNAPSHOT (Renamed from Executive Verdict) */}
             <Card className="border-l-4 border-l-purple-500 shadow-md bg-gradient-to-br from-background to-purple-50/30 dark:to-purple-900/10">
                 <CardHeader>
                     <div className="flex items-center justify-between">
                         <CardTitle className="text-xl flex items-center gap-2">
                             <ShieldCheck className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-                            Executive Strategic Verdict
+                            Strategic Snapshot
                         </CardTitle>
                         <Badge className="bg-purple-600 hover:bg-purple-700">High Confidence</Badge>
                     </div>
@@ -146,11 +121,11 @@ export default async function InsightDetailPage({
                 </CardContent>
             </Card>
 
-            {/* 3️⃣ STRATEGIC MOVEMENT (Last 30 Days) */}
+            {/* 3️⃣ MOVEMENT SUMMARY (Last 30 Days) */}
             <div className="space-y-4">
                 <h2 className="text-lg font-bold flex items-center gap-2">
                     <Activity className="h-5 w-5 text-blue-500" />
-                    Strategic Movement <span className="text-muted-foreground font-normal text-sm ml-1">(Last 30 Days)</span>
+                    Movement Summary <span className="text-muted-foreground font-normal text-sm ml-1">(Last 30 Days)</span>
                 </h2>
                 <Card>
                     <CardContent className="p-6">
@@ -203,7 +178,7 @@ export default async function InsightDetailPage({
             <div className="space-y-4">
                 <h2 className="text-lg font-bold flex items-center gap-2">
                     <Target className="h-5 w-5 text-indigo-500" />
-                    Competitive Strength & Risk Analysis
+                    Strengths & Risks
                 </h2>
                 <Card>
                     <CardContent className="p-6 space-y-6">
@@ -241,116 +216,121 @@ export default async function InsightDetailPage({
                             <div className="flex gap-2 items-start text-sm">
                                 <span className="font-semibold text-muted-foreground whitespace-nowrap">Strategic Implication:</span>
                                 <span className="font-medium text-foreground">{data.strengthRiskAnalysis.strategicImplication}</span>
-                                <Badge variant="outline" className="ml-auto text-xs shrink-0">Confidence: {data.strengthRiskAnalysis.confidence}</Badge>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* 5️⃣ AI DETECTED NARRATIVE DRIFT & 6️⃣ BLOG INTELLIGENCE */}
-            <div className="grid lg:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                    <h2 className="text-lg font-bold flex items-center gap-2">
-                        <Zap className="h-5 w-5 text-yellow-500" />
-                        Narrative Drift
-                    </h2>
-                    <Card className="h-full">
-                        <CardContent className="p-6 space-y-6">
-                            <div className="grid grid-cols-2 gap-6 relative">
-                                <div className="space-y-3 opacity-70">
-                                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Past Focus (90d ago)</h3>
-                                    <ul className="space-y-2 text-sm">
-                                        {data.narrativeDrift.pastFocus.map(f => (
-                                            <li key={f} className="flex items-center gap-2 decoration-muted-foreground/40 line-through"><div className="h-1.5 w-1.5 rounded-full bg-gray-400" />{f}</li>
-                                        ))}
-                                    </ul>
+            {/* 5️⃣ PRICING INTELLIGENCE */}
+            <div className="space-y-4">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-emerald-600" />
+                    Pricing Intelligence
+                </h2>
+                <Card>
+                    <CardContent className="p-6 space-y-6">
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div>
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">Detected Plans</h4>
+                                <ul className="space-y-3">
+                                    {data.pricingIntelligence.plans.map((plan, i) => (
+                                        <li key={i} className="flex justify-between items-start border-b pb-2 last:border-0 border-border/50">
+                                            <div>
+                                                <p className="font-semibold text-sm">{plan.name}</p>
+                                                <p className="text-xs text-muted-foreground">{plan.features.join(", ")}</p>
+                                            </div>
+                                            <span className="font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded text-sm">
+                                                {plan.price}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="space-y-6">
+                                <div>
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Recent Pricing Changes</h4>
+                                    {data.pricingIntelligence.recentChanges.length > 0 ? (
+                                        <ul className="space-y-2">
+                                            {data.pricingIntelligence.recentChanges.map((change, i) => (
+                                                <li key={i} className="text-sm flex items-center gap-2 text-orange-600 dark:text-orange-400">
+                                                    <AlertCircle className="h-3 w-3" /> {change}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground italic">No pricing structure changes detected in last 90 days.</p>
+                                    )}
                                 </div>
-                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                                    <ArrowRight className="h-6 w-6 text-muted-foreground/30" />
-                                </div>
-                                <div className="space-y-3">
-                                    <h3 className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Current Focus</h3>
-                                    <ul className="space-y-2 text-sm font-medium">
-                                        {data.narrativeDrift.currentFocus.map(f => (
-                                            <li key={f} className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" />{f}</li>
-                                        ))}
-                                    </ul>
+                                <div className="bg-emerald-50 dark:bg-emerald-500/5 p-3 rounded border border-emerald-100 dark:border-emerald-500/10">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">AI Pricing Strategy Analysis</h4>
+                                    <p className="text-sm text-emerald-900 dark:text-emerald-100 italic">
+                                        "{data.pricingIntelligence.aiAnalysis}"
+                                    </p>
                                 </div>
                             </div>
-                            <div className="p-3 rounded bg-muted/40 text-sm italic border-l-2 border-yellow-500 text-muted-foreground">
-                                "NOTE: {data.narrativeDrift.aiConclusion}"
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
 
-                <div className="space-y-4">
-                    <h2 className="text-lg font-bold flex items-center gap-2">
-                        <Brain className="h-5 w-5 text-emerald-600" />
-                        Blog Intelligence
-                    </h2>
-                    <Card className="h-full">
-                        <CardContent className="p-6 space-y-6">
-                            <div className="space-y-3">
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Top Content Themes</h3>
+            {/* 6️⃣ BLOG / CONTENT INTELLIGENCE */}
+            <div className="space-y-4">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-indigo-500" />
+                    Blog & Content Intelligence
+                </h2>
+                <Card>
+                    <CardContent className="p-6 grid md:grid-cols-2 gap-8">
+                        <div className="space-y-4">
+                            <div>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Top Content Themes</h3>
                                 <div className="flex flex-wrap gap-2">
                                     {data.blogIntelligence.topThemes.map(t => (
-                                        <Badge key={t} variant="secondary">{t}</Badge>
+                                        <Badge key={t} variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-300">
+                                            {t}
+                                        </Badge>
                                     ))}
                                 </div>
                             </div>
-                            <div className="space-y-3">
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Funnel Intent Distribution</h3>
+                            <div>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Content Funnel Intent</h3>
                                 <div className="grid grid-cols-3 gap-2 text-center text-sm">
                                     <div className="p-2 rounded bg-muted/30 border">
-                                        <span className="block text-xs text-muted-foreground">Top</span>
-                                        <span className="font-bold text-green-600">{data.blogIntelligence.funnelIntent.top}</span>
+                                        <span className="block text-xs text-muted-foreground mb-1">Top</span>
+                                        <span className="font-bold text-green-600 uppercase text-xs">{data.blogIntelligence.funnelIntent.top}</span>
                                     </div>
                                     <div className="p-2 rounded bg-muted/30 border">
-                                        <span className="block text-xs text-muted-foreground">Mid</span>
-                                        <span className="font-bold text-yellow-600">{data.blogIntelligence.funnelIntent.mid}</span>
+                                        <span className="block text-xs text-muted-foreground mb-1">Mid</span>
+                                        <span className="font-bold text-yellow-600 uppercase text-xs">{data.blogIntelligence.funnelIntent.mid}</span>
                                     </div>
                                     <div className="p-2 rounded bg-muted/30 border">
-                                        <span className="block text-xs text-muted-foreground">Bottom</span>
-                                        <span className="font-bold text-red-400">{data.blogIntelligence.funnelIntent.bottom}</span>
+                                        <span className="block text-xs text-muted-foreground mb-1">Bottom</span>
+                                        <span className="font-bold text-red-500 uppercase text-xs">{data.blogIntelligence.funnelIntent.bottom}</span>
                                     </div>
                                 </div>
                             </div>
-                            <div className="space-y-2">
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-600 mb-1">Suggested Counter-Move</h3>
-                                <p className="text-sm font-medium flex gap-2 items-start">
-                                    <ArrowRight className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-                                    {data.blogIntelligence.suggestedCounterMove}
-                                </p>
+                        </div>
+                        <div className="flex flex-col justify-center space-y-4 border-l pl-8 border-border/50">
+                            <div className="space-y-1">
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase">AI Content Insight</h4>
+                                <p className="text-sm font-medium">{data.blogIntelligence.aiInsight}</p>
                             </div>
-                        </CardContent>
-                    </Card>
-                </div>
+                            <div className="p-3 bg-muted rounded-lg border-l-2 border-indigo-500">
+                                <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Recommended Counter-Move</h4>
+                                <p className="text-sm italic text-muted-foreground">"{data.blogIntelligence.suggestedCounterMove}"</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
-            {/* 7️⃣ STRATEGIC WATCH ALERTS */}
-            <div className="space-y-4">
-                <h2 className="text-lg font-bold flex items-center gap-2">
-                    <AlertCircle className="h-5 w-5 text-orange-500" />
-                    Strategic Watch Alerts
-                </h2>
-                <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
-                    {data.watchAlerts.map((alert, i) => (
-                        <Card key={i} className="bg-orange-50/50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-800/50">
-                            <CardContent className="p-4 flex flex-col justify-between h-full gap-2">
-                                <AlertCircle className="h-5 w-5 text-orange-500" />
-                                <span className="font-medium text-sm text-orange-900 dark:text-orange-100">{alert}</span>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            </div>
-
-            {/* 8️⃣ COLLAPSIBLE ADVANCED SECTION */}
+            {/* 7️⃣ ADVANCED SEO (Collapsible) */}
             <Collapsible>
-                <CollapsibleTrigger className={cn(buttonVariants({ variant: "outline" }), "w-full flex justify-between items-center group")}>
-                    <span className="font-semibold text-muted-foreground group-hover:text-foreground">Advanced Signal Breakdown</span>
+                <CollapsibleTrigger className={cn(buttonVariants({ variant: "outline" }), "w-full flex justify-between items-center group bg-background")}>
+                    <span className="font-semibold text-muted-foreground group-hover:text-foreground flex items-center gap-2">
+                        <Zap className="h-4 w-4" /> Advanced SEO & Signal Breakdown
+                    </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-4">
@@ -372,6 +352,33 @@ export default async function InsightDetailPage({
                                 <h4 className="text-xs font-bold uppercase text-muted-foreground">Content Volume</h4>
                                 <p className="text-sm font-mono text-foreground/80">{data.advancedSignals.contentVolume}</p>
                             </div>
+                        </CardContent>
+                    </Card>
+                </CollapsibleContent>
+            </Collapsible>
+
+            {/* 8️⃣ RAW LOGS (Collapsible) */}
+            <Collapsible>
+                <CollapsibleTrigger className={cn(buttonVariants({ variant: "outline" }), "w-full flex justify-between items-center group bg-background mt-4")}>
+                    <span className="font-semibold text-muted-foreground group-hover:text-foreground flex items-center gap-2">
+                        <Terminal className="h-4 w-4" /> System Logs (Raw)
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-4">
+                    <Card className="bg-black/95 border-neutral-800">
+                        <CardContent className="p-4 font-mono text-xs text-green-500/80 space-y-1">
+                            {data.rawLogs.length > 0 ? (
+                                data.rawLogs.map((log, i) => (
+                                    <div key={i} className="flex gap-4">
+                                        <span className="text-neutral-500">[{log.timestamp}]</span>
+                                        <span className="text-blue-400">[{log.source}]</span>
+                                        <span>{log.event}</span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-neutral-500 italic">No recent system logs available for this entity.</div>
+                            )}
                         </CardContent>
                     </Card>
                 </CollapsibleContent>

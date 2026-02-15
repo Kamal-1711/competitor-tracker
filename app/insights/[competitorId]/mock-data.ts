@@ -4,6 +4,17 @@ export interface StrategicIntelligence {
     lastAnalyzed: string;
     monitoringStatus: "Stable" | "Active Shift" | "Expansion Detected";
     aiConfidenceScore: number;
+    companyProfile: {
+        name: string;
+        industry: string;
+        foundedYear: string;
+        employees: string;
+        headquarters: string;
+        linkedinFollowers: string;
+        fundingStage: string;
+        appRating?: string;
+        websiteConfidence: "High" | "Medium" | "Low";
+    };
     executiveVerdict: {
         strategicPosture: string;
         currentMotion: string;
@@ -23,6 +34,11 @@ export interface StrategicIntelligence {
         risks: string[];
         strategicImplication: string;
         confidence: "Low" | "Medium" | "High";
+    };
+    pricingIntelligence: {
+        plans: { name: string; price: string; features: string[] }[];
+        recentChanges: string[];
+        aiAnalysis: string;
     };
     narrativeDrift: {
         pastFocus: string[];
@@ -46,6 +62,11 @@ export interface StrategicIntelligence {
         pricingStructure: string;
         contentVolume: string;
     };
+    rawLogs: {
+        timestamp: string;
+        source: string;
+        event: string;
+    }[];
 }
 
 const DATA_GROWW: StrategicIntelligence = {
@@ -54,6 +75,17 @@ const DATA_GROWW: StrategicIntelligence = {
     lastAnalyzed: "Feb 12, 2026",
     monitoringStatus: "Stable",
     aiConfidenceScore: 82,
+    companyProfile: {
+        name: "Groww",
+        industry: "FinTech (Retail Investing)",
+        foundedYear: "2016",
+        employees: "2,000+",
+        headquarters: "Bengaluru, India",
+        linkedinFollowers: "450,000+",
+        fundingStage: "Series E (Public reports)",
+        appRating: "4.3 / 5 (Play Store)",
+        websiteConfidence: "Medium",
+    },
     executiveVerdict: {
         strategicPosture: "Growth-Oriented Challenger",
         currentMotion: "Messaging expansion toward long-term wealth positioning",
@@ -96,6 +128,15 @@ const DATA_GROWW: StrategicIntelligence = {
             "If retail market slows, growth velocity may decline due to concentrated segment exposure.",
         confidence: "Medium",
     },
+    pricingIntelligence: {
+        plans: [
+            { name: "Direct Mutual Funds", price: "₹0", features: ["0% commission", "No hidden charges"] },
+            { name: "Equity Delivery", price: "₹20 or 0.05%", features: ["Lower of the two", "Flat fee structure"] },
+            { name: "Intraday", price: "₹20", features: ["Flat fee per executed order"] }
+        ],
+        recentChanges: ["Clarified checking charges on pricing page", "Highlighted 'No AMC' feature"],
+        aiAnalysis: "Maintaining aggressive low-cost leadership to sustain user acquisition momentum."
+    },
     narrativeDrift: {
         pastFocus: ["Low-cost trading", "Fast execution", "Brokerage advantage"],
         currentFocus: ["Long-term investing", "Wealth creation", "Financial literacy"],
@@ -130,6 +171,11 @@ const DATA_GROWW: StrategicIntelligence = {
         pricingStructure: "Stable flat-fee structure detected.",
         contentVolume: "12 new blog posts detected in last 30 days.",
     },
+    rawLogs: [
+        { timestamp: "2026-02-12 14:30", source: "Crawler", event: "Detected strict CSP on pricing page" },
+        { timestamp: "2026-02-12 14:28", source: "Analyzer", event: "Identified 3 new blog posts" },
+        { timestamp: "2026-02-12 10:15", source: "Monitor", event: "Homepage hero text check: No change" }
+    ]
 };
 
 const DATA_ZERODHA: StrategicIntelligence = {
@@ -138,6 +184,17 @@ const DATA_ZERODHA: StrategicIntelligence = {
     lastAnalyzed: "Feb 12, 2026",
     monitoringStatus: "Stable",
     aiConfidenceScore: 94,
+    companyProfile: {
+        name: "Zerodha",
+        industry: "FinTech (Brokerage)",
+        foundedYear: "2010",
+        employees: "1,100+",
+        headquarters: "Bengaluru, India",
+        linkedinFollowers: "850,000+",
+        fundingStage: "Bootstrapped",
+        appRating: "4.2 / 5",
+        websiteConfidence: "High",
+    },
     executiveVerdict: {
         strategicPosture: "Market Leader / Incumbent",
         currentMotion: "Focus on ecosystem consolidation and tech superiority",
@@ -173,6 +230,14 @@ const DATA_ZERODHA: StrategicIntelligence = {
             "High barrier to exit for power users, but vulnerable to 'easy-to-use' competitors capturing Gen-Z entry segment.",
         confidence: "High",
     },
+    pricingIntelligence: {
+        plans: [
+            { name: "Equity Delivery", price: "₹0", features: ["Free forever", "No hidden costs"] },
+            { name: "Intraday & F&O", price: "₹20", features: ["Flat fee per executed order"] }
+        ],
+        recentChanges: ["No changes in last 90 days"],
+        aiAnalysis: "Pricing consistency reinforces brand value of transparency and stability."
+    },
     narrativeDrift: {
         pastFocus: ["Lowest cost", "Technology first", "Disruption"],
         currentFocus: ["Ecosystem", "Education (Varsity)", "Financial Health"],
@@ -202,6 +267,10 @@ const DATA_ZERODHA: StrategicIntelligence = {
         pricingStructure: "Zero equity delivery, flat F&O fees.",
         contentVolume: "Low frequency, high technical depth posts.",
     },
+    rawLogs: [
+        { timestamp: "2026-02-12 11:00", source: "Crawler", event: "Successfully parsed sitemap.xml" },
+        { timestamp: "2026-02-12 10:55", source: "System", event: "Scheduled daily crawl job" }
+    ]
 };
 
 const DATA_ANGEL_ONE: StrategicIntelligence = {
@@ -210,6 +279,17 @@ const DATA_ANGEL_ONE: StrategicIntelligence = {
     lastAnalyzed: "Feb 11, 2026",
     monitoringStatus: "Expansion Detected",
     aiConfidenceScore: 88,
+    companyProfile: {
+        name: "Angel One",
+        industry: "FinTech (Full Service Broker)",
+        foundedYear: "1996",
+        employees: "3,500+",
+        headquarters: "Mumbai, India",
+        linkedinFollowers: "300,000+",
+        fundingStage: "Public (NSE/BSE)",
+        appRating: "4.4 / 5",
+        websiteConfidence: "High",
+    },
     executiveVerdict: {
         strategicPosture: "Aggressive Scale-Up",
         currentMotion: "Rapid diversification into Super-App territory",
@@ -246,6 +326,14 @@ const DATA_ANGEL_ONE: StrategicIntelligence = {
             "Will likely capture the next 100M users via distribution muscle, but may lose premium users to cleaner UX apps.",
         confidence: "High",
     },
+    pricingIntelligence: {
+        plans: [
+            { name: "iTrade Prime", price: "₹20", features: ["Flat fee structure", "Zero brokerage on delivery"] },
+            { name: "Margin Funding", price: "18% p.a.", features: ["Competitive MTF rates"] }
+        ],
+        recentChanges: ["New bundled offers for loan products"],
+        aiAnalysis: "Using brokerage as loss leader to drive high-margin lending revenue."
+    },
     narrativeDrift: {
         pastFocus: ["Traditional Broking", "Advisory", "Trust"],
         currentFocus: ["Fintech Super App", "Credit", "Lifestyle"],
@@ -275,6 +363,10 @@ const DATA_ANGEL_ONE: StrategicIntelligence = {
         pricingStructure: "Complex tiered structure with cross-subsidies.",
         contentVolume: "Very high volume (daily market wraps + seo pages).",
     },
+    rawLogs: [
+        { timestamp: "2026-02-11 09:30", source: "Crawler", event: "Detected 4 new landing pages" },
+        { timestamp: "2026-02-11 09:32", source: "Analyzer", event: "Triggered 'Super App' keyword alert" }
+    ]
 };
 
 // Generic Generator for unknown companies
@@ -319,6 +411,17 @@ function generateGenericProfile(
         lastAnalyzed: "Feb 12, 2026",
         monitoringStatus: statuses[hash % statuses.length],
         aiConfidenceScore: 70 + (hash2 % 28),
+        companyProfile: {
+            name: name,
+            industry: "Technology / SaaS",
+            foundedYear: "2018",
+            employees: "100-500",
+            headquarters: "San Francisco, CA",
+            linkedinFollowers: "10,000+",
+            fundingStage: "Series B",
+            appRating: "N/A",
+            websiteConfidence: "Medium",
+        },
         executiveVerdict: {
             strategicPosture: postures[hash % postures.length],
             currentMotion: motions[hash2 % motions.length],
@@ -356,6 +459,14 @@ function generateGenericProfile(
             strategicImplication: `Competitor ${name} remains a relevant threat in specific segments but shows vulnerability to differentiated attacks.`,
             confidence: "Medium",
         },
+        pricingIntelligence: {
+            plans: [
+                { name: "Starter", price: "$29/mo", features: ["Core features", "Email support"] },
+                { name: "Pro", price: "$99/mo", features: ["Advanced analytics", "Priority support"] }
+            ],
+            recentChanges: [],
+            aiAnalysis: "Standard tier-based SaaS pricing model detected."
+        },
         narrativeDrift: {
             pastFocus: ["Core Product Features", "Utility", "Speed"],
             currentFocus: ["Solutions", "Outcomes", "Customer Success"],
@@ -381,7 +492,8 @@ function generateGenericProfile(
             ctaShift: "Standard 'Get Started' / 'Demo' split.",
             pricingStructure: "Appears standard.",
             contentVolume: "Moderate (~2-3 posts/month detected)."
-        }
+        },
+        rawLogs: []
     };
 }
 
