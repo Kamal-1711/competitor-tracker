@@ -1,9 +1,10 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { CrawlFrequency } from "@/lib/types/competitor";
+import { runServerlessCrawl } from "@/lib/serverless-crawl";
 
 const DUMMY_AUTH_COOKIE = "ct_dummy_auth";
 
@@ -297,21 +298,13 @@ export async function triggerCrawlNow(competitorId: string): Promise<TriggerCraw
     return { ok: false, error: enqueueError?.message ?? "Failed to enqueue crawl job" };
   }
 
-  // Fire-and-forget: trigger the crawl via local API route
-  const headersList = await headers();
-  const host = headersList.get("host") ?? "localhost:3000";
-  const protocol = host.startsWith("localhost") ? "http" : "https";
-  const baseUrl = `${protocol}://${host}`;
-  fetch(`${baseUrl}/api/crawl`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jobId: String(jobId),
-      competitorId,
-      competitorUrl: competitor.url,
-    }),
+  // Run crawl directly (no HTTP round-trip — works on Vercel)
+  runServerlessCrawl({
+    jobId: String(jobId),
+    competitorId,
+    competitorUrl: competitor.url,
   }).catch((err) => {
-    console.error("[triggerCrawlNow] Fire-and-forget crawl failed:", err);
+    console.error("[triggerCrawlNow] Crawl failed:", err);
   });
 
   revalidatePath(getCompetitorsPath());
