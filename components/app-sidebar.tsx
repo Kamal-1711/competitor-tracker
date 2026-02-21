@@ -45,7 +45,7 @@ const sidebarLinks = [
   },
   {
     title: "Settings",
-    href: "/dashboard/settings",
+    href: "/dashboard/my-test-settings",
     icon: Settings,
   },
 ];
