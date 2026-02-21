@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    // Playwright must not be bundled by webpack; it needs native binaries at runtime
-    serverComponentsExternalPackages: ["playwright"],
-  },
+  // Playwright is only used for local scripts/tests, never in the Next.js app bundle
+  serverExternalPackages: ["playwright"],
 };
 
 export default nextConfig;
