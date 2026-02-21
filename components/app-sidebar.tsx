@@ -110,7 +110,11 @@ export function AppSidebar() {
                   )}
                   asChild
                 >
-                  <Link href={link.href} title={link.title}>
+                  <Link
+                    href={link.href}
+                    title={link.title}
+                    onClick={() => console.log(`[DEBUG-CLICK] Navigating to: ${link.href}`)}
+                  >
                     <Icon className="h-4 w-4 shrink-0" />
                     <span className={cn(
                       "transition-opacity duration-200",
