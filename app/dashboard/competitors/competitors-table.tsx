@@ -140,22 +140,23 @@ export function CompetitorsTable({
   }
 
   async function onCrawlNow(competitorId: string) {
+    setCrawlingCompetitorId(competitorId);
+    setCrawlingJobId("pending");
     try {
       const result = await triggerCrawlNow(competitorId);
       if (result.ok) {
-        setCrawlingJobId(result.jobId);
-        setCrawlingCompetitorId(competitorId);
+        // Crawl is already completed by the time the server action returns
         router.refresh();
-        pollUntilDone(result.jobId, competitorId).finally(() => {
-          setCrawlingJobId(null);
-          setCrawlingCompetitorId(null);
-        });
+        router.push(`/insights/${competitorId}`);
       } else {
         alert(`Unable to start competitor update check: ${result.error}`);
       }
     } catch (error) {
       alert("Unable to start competitor update check.");
       console.error(error);
+    } finally {
+      setCrawlingJobId(null);
+      setCrawlingCompetitorId(null);
     }
   }
 

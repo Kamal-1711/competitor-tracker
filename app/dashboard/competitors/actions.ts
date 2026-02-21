@@ -298,16 +298,19 @@ export async function triggerCrawlNow(competitorId: string): Promise<TriggerCraw
     return { ok: false, error: enqueueError?.message ?? "Failed to enqueue crawl job" };
   }
 
-  // Run crawl directly (no HTTP round-trip — works on Vercel)
-  runServerlessCrawl({
+  // MUST await — Vercel kills un-awaited promises when server action returns
+  const crawlResult = await runServerlessCrawl({
     jobId: String(jobId),
     competitorId,
     competitorUrl: competitor.url,
-  }).catch((err) => {
-    console.error("[triggerCrawlNow] Crawl failed:", err);
   });
 
+  if (!crawlResult.ok) {
+    console.error("[triggerCrawlNow] Crawl failed:", crawlResult.errors);
+  }
+
   revalidatePath(getCompetitorsPath());
+  revalidatePath("/dashboard");
 
   return { ok: true, jobId: String(jobId) };
 }
