@@ -5,6 +5,7 @@
 import * as cheerio from "cheerio";
 import crypto from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { dispatchNotifications } from "@/lib/notify";
 
 const USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -442,6 +443,26 @@ export async function runServerlessCrawl(params: {
         console.log(
             `[serverless-crawl] Done: pages=${crawledCount}, errors=${errors.length}`
         );
+
+        // 7. Dispatch notifications (email / Slack)
+        try {
+            const { data: comp } = await supabase
+                .from("competitors")
+                .select("name, workspace_id")
+                .eq("id", competitorId)
+                .single();
+            if (comp?.workspace_id) {
+                await dispatchNotifications({
+                    workspaceId: comp.workspace_id,
+                    competitorName: comp.name || competitorUrl,
+                    competitorUrl,
+                    pagesCount: crawledCount,
+                    crawlJobId: jobId,
+                });
+            }
+        } catch (notifyErr) {
+            console.warn("[serverless-crawl] Notification dispatch error:", notifyErr);
+        }
 
         return {
             ok: true,
