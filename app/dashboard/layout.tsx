@@ -21,11 +21,9 @@ export default async function DashboardLayout({
           <CompetitiveRadarRoot workspaceId={workspaceId}>
             <TopBar />
             <main className="flex-1 overflow-auto p-4 md:p-8">
-              <PageTransition>
-                <div className="mx-auto max-w-6xl space-y-6">
-                  {children}
-                </div>
-              </PageTransition>
+              <div className="mx-auto max-w-6xl space-y-6">
+                {children}
+              </div>
             </main>
           </CompetitiveRadarRoot>
         </div>
