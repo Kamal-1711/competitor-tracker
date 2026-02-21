@@ -10,6 +10,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  console.log(`[DashboardLayout] Rendering children for path...`);
   const workspaceId = await getOrCreateWorkspaceId();
 
   return (
