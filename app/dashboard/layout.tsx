@@ -10,7 +10,6 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  console.log(`[DashboardLayout] Rendering children for path...`);
   const workspaceId = await getOrCreateWorkspaceId();
 
   return (
@@ -21,9 +20,11 @@ export default async function DashboardLayout({
           <CompetitiveRadarRoot workspaceId={workspaceId}>
             <TopBar />
             <main className="flex-1 overflow-auto p-4 md:p-8">
-              <div className="mx-auto max-w-6xl space-y-6">
-                {children}
-              </div>
+              <PageTransition>
+                <div className="mx-auto max-w-6xl space-y-6">
+                  {children}
+                </div>
+              </PageTransition>
             </main>
           </CompetitiveRadarRoot>
         </div>

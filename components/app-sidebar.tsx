@@ -45,7 +45,7 @@ const sidebarLinks = [
   },
   {
     title: "Settings",
-    href: "/dashboard/my-test-settings",
+    href: "/dashboard/settings",
     icon: Settings,
   },
 ];
@@ -110,11 +110,7 @@ export function AppSidebar() {
                   )}
                   asChild
                 >
-                  <Link
-                    href={link.href}
-                    title={link.title}
-                    onClick={() => console.log(`[DEBUG-CLICK] Navigating to: ${link.href}`)}
-                  >
+                  <Link href={link.href} title={link.title}>
                     <Icon className="h-4 w-4 shrink-0" />
                     <span className={cn(
                       "transition-opacity duration-200",

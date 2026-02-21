@@ -71,9 +71,6 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
-      <div className="bg-blue-600 text-white p-4 text-center font-bold text-3xl mb-8 rounded-lg shadow-xl">
-        DEBUG: I AM THE DASHBOARD OVERVIEW PAGE
-      </div>
       <DashboardHeader onScanAll={triggerAllCrawls} />
 
       {/* Metric Cards */}

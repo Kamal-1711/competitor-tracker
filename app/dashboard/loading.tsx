@@ -5,7 +5,6 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 export default function DashboardLoading() {
     return (
         <div className="space-y-8 pb-10">
-            <div className="bg-yellow-500 text-black p-2 text-center font-bold">DEBUG: LOADING STATE (SKELETON)</div>
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border/40 pb-6">
                 <div>
