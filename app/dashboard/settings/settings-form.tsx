@@ -159,8 +159,8 @@ export function SettingsForm({
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${activeTab === tab.id
-                                ? "bg-background text-foreground shadow-sm border border-border/60"
-                                : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                            ? "bg-background text-foreground shadow-sm border border-border/60"
+                            : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                             }`}
                     >
                         {tab.icon}
@@ -208,7 +208,7 @@ export function SettingsForm({
                             </div>
                         </CardHeader>
                         {emailEnabled && (
-                            <CardContent className="pt-0 space-y-4 border-t border-border/40 mt-0 pt-4">
+                            <CardContent className="space-y-4 border-t border-border/40 pt-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="email-address" className="text-sm">
                                         Email Address
@@ -382,8 +382,9 @@ export function SettingsForm({
                                     desc: "Every detected change including minor text edits",
                                 },
                             ].map((opt) => (
-                                <label
+                                <div
                                     key={opt.val}
+                                    onClick={() => toggleNotifyOn(opt.val)}
                                     className="flex items-center justify-between p-3 rounded-lg border border-border/40 hover:border-border/80 transition-colors cursor-pointer"
                                 >
                                     <div>
@@ -393,8 +394,9 @@ export function SettingsForm({
                                     <Switch
                                         checked={notifyOn.includes(opt.val)}
                                         onCheckedChange={() => toggleNotifyOn(opt.val)}
+                                        onClick={(e) => e.stopPropagation()}
                                     />
-                                </label>
+                                </div>
                             ))}
                         </CardContent>
                     </Card>
