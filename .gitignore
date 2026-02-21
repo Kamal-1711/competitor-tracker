@@ -40,3 +40,10 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# Local logs and test files
+build_log.txt
+debug_page.html
+test_extraction.ts
+test_output.txt
+test_output_utf8.txt
