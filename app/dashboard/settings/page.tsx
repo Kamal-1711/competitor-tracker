@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 import { SettingsForm } from "./settings-form";
 import { getNotificationSettings } from "./actions";
 
@@ -16,12 +15,15 @@ async function getWorkspaceId(): Promise<string | null> {
 
 export default async function SettingsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
+  // Get user email if signed in — but don't redirect if not (the app uses
+  // a dummy-auth / shared workspace model that allows unauthenticated access)
+  let userEmail = "";
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    userEmail = user?.email ?? "";
+  } catch {
+    // ignore — just means no Supabase session
   }
 
   let workspaceId: string | null = null;
@@ -37,9 +39,10 @@ export default async function SettingsPage() {
 
   return (
     <SettingsForm
-      userEmail={user?.email ?? ""}
+      userEmail={userEmail}
       workspaceId={workspaceId ?? ""}
       initialSettings={settings}
     />
   );
 }
+
